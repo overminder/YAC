@@ -7,6 +7,7 @@ data Tree = Leaf Operand
           | Add Tree Tree
           | Move Tree Tree
           | Deref Tree
+          | Nop
   deriving (Eq)
 
 instance Show Tree where
@@ -15,4 +16,5 @@ instance Show Tree where
   show (Add t0 t1) = show t0 ++ " + " ++ show t1
   show (Move t0 t1) = show t0 ++ " := " ++ show t1
   show (Deref t) = "*(" ++ show t ++ ")"
+  show Nop = "nop"
 

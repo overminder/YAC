@@ -151,6 +151,8 @@ munchTree (IRTree.Seq t0 t1) = do
 munchTree (IRTree.Leaf op) = do
   return $ Just $ IROperand op
 
+munchTree IRTree.Nop = return Nothing
+
 -- Helpers
 isInt32 :: Int -> Bool
 isInt32 i = floor (- 2 ** 31) <= i && i <= floor (2 ** 31 - 1)

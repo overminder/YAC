@@ -11,10 +11,10 @@ symbol = oneOf "!#$%&|+-*/:<=>?@^_~"
 spaces :: Parser ()
 spaces = skipMany1 space
 
-readCell :: String -> String
-readCell input = case parse parseCell "Scheme" input of
-  Left err -> error "foo"
-  Right val -> "Found " ++ show val
+readCell :: String -> Cell
+readCell input = case parse parseProg "Scheme" input of
+  Left err -> listToCell [Symbol "parse-error", Symbol $ show err]
+  Right val -> listToCell [Symbol "parse-success", val]
 
 parseAtom :: Parser Cell
 parseAtom = do
@@ -27,7 +27,41 @@ parseAtom = do
     otherwise -> Symbol atom
 
 parseNumber :: Parser Cell
-parseNumber = liftM (Fixnum . read) (many digit)
+parseNumber = liftM (Fixnum . read) (many1 digit)
+
+parsePair :: Parser Cell
+parsePair = do
+  char '('
+  p <- try parseList <|> parseDottedPair
+  char ')'
+  return p
+
+parseList :: Parser Cell
+parseList = liftM listToCell $ sepBy parseCell spaces
+
+parseDottedPair :: Parser Cell
+parseDottedPair = do
+  cars <- endBy parseCell spaces
+  cdr <- do
+    char '.'
+    spaces
+    parseCell
+  return $ dottedListToCell cars cdr
+
+parseQuoted :: Parser Cell
+parseQuoted = do
+  char '\''
+  c <- parseCell
+  return $ listToCell [Symbol "quote", c]
 
 parseCell :: Parser Cell
-parseCell = parseAtom <|> parseNumber
+parseCell = parseAtom
+        <|> parseNumber
+        <|> parsePair
+        <|> parseQuoted
+
+parseProg :: Parser Cell
+parseProg = do
+  cs <- sepBy parseCell (many space)
+  return $ listToCell cs
+

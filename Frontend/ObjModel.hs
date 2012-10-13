@@ -21,7 +21,20 @@ instance Show Cell where
   show Nil = "()"
 
 listToCell :: [Cell] -> Cell
-listToCell = foldr accu Nil
+listToCell = (flip dottedListToCell) Nil
+
+dottedListToCell :: [Cell] -> Cell -> Cell
+dottedListToCell = flip (foldr Pair)
+
+isProperList :: Cell -> Bool
+isProperList (Pair _ cdr) = isProperList cdr
+isProperList Nil = True
+isProperList _ = False
+
+pairToList :: Cell -> ([Cell], Cell)
+pairToList (Pair car cdr) = (car:cdrs, left)
   where
-    accu a d = Pair a d
+    (cdrs, left) = pairToList cdr
+pairToList Nil = ([], Nil)
+pairToList c = ([], c)
 

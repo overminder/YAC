@@ -13,27 +13,12 @@ import qualified Backend.X64.DataFlow as DataFlow
 
 import Frontend.ObjModel
 import Frontend.Parser (readCell)
-
-[pr0, pr1, pr2, pr3] = map (RegOperand . PseudoReg) [0, 1, 2, 3]
-
-irInsn = IRTree.Seq
-  (IRTree.Move (IRTree.Leaf pr0) (IRTree.Leaf (ImmOperand 1)))
-  (IRTree.Seq
-    (IRTree.Move (IRTree.Leaf pr1) (IRTree.Leaf (ImmOperand 2)))
-    (IRTree.Seq
-      (IRTree.Move (IRTree.Leaf pr2) (IRTree.Add (IRTree.Leaf pr0)
-                                                 (IRTree.Leaf pr1)))
-      (IRTree.Move (IRTree.Leaf pr3) (IRTree.Add (IRTree.Leaf pr0)
-                                                 (IRTree.Leaf (ImmOperand 3))))))
-
-x64Insn :: [Insn]
-x64Insn = munch irInsn
+import Frontend.IRGen
 
 liveness :: [DataFlow.DefUse] -> [DataFlow.Liveness]
 liveness = List.init . (foldr f [DataFlow.emptyLiveness])
   where
     f du nextLvs@(nextLv:_) = (DataFlow.getLiveness du nextLv):nextLvs
-
 
 prettifyDataFlow :: [Insn] -> String
 prettifyDataFlow insnList = List.intercalate "\n" outputStrList
@@ -50,4 +35,13 @@ prettifyDataFlow insnList = List.intercalate "\n" outputStrList
 
 main = do
   input <- liftM (!!0) getArgs
-  putStrLn $ readCell input
+  let c = readCell input
+  putStrLn $ show c
+  case pairToList c of
+    ([Symbol "parse-success", prog], _) -> do
+      let tree = gen prog
+      putStrLn $ show tree
+      let insns = munch tree
+      putStrLn $ prettifyDataFlow insns
+    ([Symbol "parse-error", what], _) -> putStrLn $ show what
+
