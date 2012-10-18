@@ -8,6 +8,6 @@ Yet Another Compiler
 Usage
 -----
 
-.. code:: bash
-  ghc --make Main
-  ./Main "(define a 1) (define b 2) (define c (+ a b))"
+  ``ghc --make Main``
+
+  ``./Main "(define a 1) (define b 2) (define c (+ a b))"``

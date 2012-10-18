@@ -6,16 +6,16 @@
     Seems that I need to read MOAR papers and think MOAR.
 """
 
-class Inteval(object):
+class Interval(object):
     INVALID = -1
     def __init__(self, vreg):
-        self.start = Inteval.INVALID
-        self.end = Inteval.INVALID
+        self.start = Interval.INVALID
+        self.end = Interval.INVALID
         self.vreg = vreg # virtual register
         self.mreg = None # machine register
 
     def live_until_here(self, insn_index):
-        if self.start == Inteval.INVALID:
+        if self.start == Interval.INVALID:
             self.start = self.end = insn_index
         else:
             self.end = insn_index
@@ -52,8 +52,8 @@ def linear_scan_reg_alloc(insn_list):
                 stack_loc = regalloc.new_stack_loc(interval.vreg)
 
 def determine_intervals(insn_list):
-    res = defaultdict(lambda: Inteval())
-    # Determine the intevals
+    res = defaultdict(lambda: Interval())
+    # Determine the intervals
     for i, insn in enumerate(insn_list):
         liveness = insn.get_liveness()
         for v in liveness.lives:
