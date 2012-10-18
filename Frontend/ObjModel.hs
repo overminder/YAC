@@ -1,4 +1,10 @@
-module Frontend.ObjModel where
+module Frontend.ObjModel (
+  Cell(..),
+  listToCell,
+  dottedListToCell,
+  isProperList,
+  pairToList
+) where
 
 data Cell = Fixnum Int
           | Symbol String

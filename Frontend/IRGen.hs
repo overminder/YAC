@@ -1,4 +1,7 @@
-module Frontend.IRGen where
+module Frontend.IRGen (
+  GenState(..),
+  gen
+) where
 
 import Control.Monad.State
 import Data.Map (Map)
@@ -17,14 +20,14 @@ data GenState = GenState {
 
 type IRGen = State GenState
 
-emptyGenState = GenState 0 Map.empty
+emptyGenState = GenState 1 Map.empty
 
 getNextId :: IRGen Int
 getNextId = do
   s <- get
   let i = nextId s
   put s{nextId=i+1}
-  return $ i + 1
+  return i
 
 putSymTab :: SymTab -> IRGen ()
 putSymTab tab = do
@@ -45,8 +48,8 @@ memorizeSymbol name = do
       putSymTab $ Map.insert name newReg tab
       return newReg
 
-gen :: Cell -> Tree
-gen c = evalState (genWith (Pair (Symbol "begin") c)) emptyGenState
+gen :: Cell -> (Tree, GenState)
+gen c = runState (genWith (Pair (Symbol "begin") c)) emptyGenState
 
 genWith :: Cell -> IRGen Tree
 genWith (Fixnum i) = return $ Leaf $ ImmOperand i
@@ -67,7 +70,8 @@ genWithList [Symbol "+", lhs, rhs] = do
 genWithList lst@[Symbol "define", Symbol name, expr] = do
   maybeReg <- lookupSymbol name
   case maybeReg of
-    Just reg -> error ("Redefining variable at #define: " ++ (show $ listToCell lst))
+    Just reg -> error ("Redefining variable at #define: "
+                       ++ (show $ listToCell lst))
     Nothing -> do
       exprTree <- genWith expr
       reg <- memorizeSymbol name

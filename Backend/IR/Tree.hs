@@ -1,4 +1,6 @@
-module Backend.IR.Tree where
+module Backend.IR.Tree (
+  Tree(..)
+) where
 
 import Backend.IR.Operand
 

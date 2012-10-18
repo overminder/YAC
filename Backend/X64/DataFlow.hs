@@ -1,8 +1,13 @@
-module Backend.X64.DataFlow where
+module Backend.X64.DataFlow (
+  DefUse(..),
+  getDefUse,
+  Liveness(..),
+  getLiveness
+) where
 
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.List (union)
+import qualified Data.List as List
 
 import qualified Backend.IR.Operand as IROp
 import Backend.X64.Insn
@@ -14,8 +19,8 @@ data DefUse = DefUse {
 
 mergeDefUse :: DefUse -> DefUse -> DefUse
 mergeDefUse du0 du1 = DefUse {
-  getDef = getDef du0 `union` getDef du1,
-  getUse = getUse du0 `union` getUse du1
+  getDef = getDef du0 `List.union` getDef du1,
+  getUse = getUse du0 `List.union` getUse du1
 }
 
 instance Show DefUse where
@@ -82,13 +87,19 @@ emptyLiveness = Liveness []
          else
            thisLv.add v -- pass throu
  -}
-getLiveness :: DefUse -> Liveness -> Liveness
-getLiveness du nextLv = 
-  Liveness $ union (foldr checkDef [] (getLiveVars nextLv)) (getUse du)
+getLiveness :: [DefUse] -> [Liveness]
+getLiveness = List.init . (foldr combine [emptyLiveness])
   where
-    checkDef :: IROp.Reg -> [IROp.Reg] -> [IROp.Reg]
-    checkDef x =
-      if x `elem` (getDef du)
-        then id
-        else (x:)
+    combine :: DefUse -> [Liveness] -> [Liveness]
+    combine du nextLvs@(nextLv:_) = (getLiveness' du nextLv):nextLvs
+    getLiveness' :: DefUse -> Liveness -> Liveness
+    getLiveness' du nextLv = 
+      Liveness $ List.union (foldr checkDef [] (getLiveVars nextLv)) (getUse du)
+      where
+        checkDef :: IROp.Reg -> [IROp.Reg] -> [IROp.Reg]
+        checkDef x =
+          if x `elem` (getDef du)
+            then id
+            else (x:)
+
 

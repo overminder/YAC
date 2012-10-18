@@ -1,4 +1,7 @@
-module Backend.X64.Munch where
+module Backend.X64.Munch (
+  munch,
+  munchWithNextId
+) where
 
 import Control.Monad.State
 import Data.Map (Map)
@@ -15,17 +18,20 @@ data MunchState = MunchState {
 
 emptyMunchState :: MunchState
 emptyMunchState = MunchState {
-  nextId = 0,
+  nextId = 1,
   insnList = []
 }
 
 type Muncher = State MunchState
 
-execMunch :: IRTree.Tree -> MunchState
-execMunch t = execState (munchTree t) emptyMunchState
+execMunch :: IRTree.Tree -> Int -> MunchState
+execMunch t i = execState (munchTree t) emptyMunchState{nextId=i}
 
 munch :: IRTree.Tree -> [Insn]
-munch = insnList . execMunch
+munch = insnList . ((flip execMunch) 1)
+
+munchWithNextId :: IRTree.Tree -> Int -> [Insn]
+munchWithNextId t i = insnList (execMunch t i)
 
 newPseudoReg :: Muncher Operand
 newPseudoReg = liftM (IROperand . IROp.RegOperand . IROp.PseudoReg) genNextId

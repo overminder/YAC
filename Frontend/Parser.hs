@@ -1,4 +1,6 @@
-module Frontend.Parser where
+module Frontend.Parser (
+  readProg
+) where
 
 import Text.ParserCombinators.Parsec hiding (spaces)
 import Control.Monad
@@ -11,8 +13,8 @@ symbol = oneOf "!#$%&|+-*/:<=>?@^_~"
 spaces :: Parser ()
 spaces = skipMany1 space
 
-readCell :: String -> Cell
-readCell input = case parse parseProg "Scheme" input of
+readProg :: String -> Cell
+readProg input = case parse parseProg "Scheme" input of
   Left err -> listToCell [Symbol "parse-error", Symbol $ show err]
   Right val -> listToCell [Symbol "parse-success", val]
 
@@ -24,7 +26,7 @@ parseAtom = do
   return $ case atom of
     "#t" -> Boolean True
     "#f" -> Boolean False
-    otherwise -> Symbol atom
+    _ -> Symbol atom
 
 parseNumber :: Parser Cell
 parseNumber = liftM (Fixnum . read) (many1 digit)

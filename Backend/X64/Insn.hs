@@ -1,4 +1,11 @@
-module Backend.X64.Insn where
+module Backend.X64.Insn (
+  Scale(..),
+  Address(..),
+  Operand(..),
+  Cond(..),
+  Label(..),
+  Insn(..)
+) where
 
 import Data.List (intercalate)
 import qualified Backend.IR.Operand as IROp

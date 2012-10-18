@@ -1,4 +1,9 @@
-module Backend.IR.Operand where
+module Backend.IR.Operand (
+  Reg(..),
+  Operand(..),
+  getReg,
+  getImm
+) where
 
 data Reg = PseudoReg Int
          | MachReg String
@@ -18,7 +23,9 @@ instance Show Operand where
 
 getReg :: Operand -> Reg
 getReg (RegOperand r) = r
+getReg i = error ("Not a register operand: " ++ show i)
 
 getImm :: Operand -> Int
 getImm (ImmOperand i) = i
+getImm r = error ("Not a immediate operand: " ++ show r)
 
