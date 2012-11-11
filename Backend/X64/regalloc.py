@@ -61,3 +61,43 @@ def determine_intervals(insn_list):
     return res
 
 
+def graph_coloring(flow_graph):
+    i_graph = InterferenceGraph()
+
+    # Build
+    for liveness in flow_graph.get_liveness():
+        i_graph.add_liveness(liveness)
+
+    # Simplify
+    node_stack = []
+    while i_graph.not_empty():
+        i_node = i_graph.find_simplify_node()
+        if not i_node:
+            # Cannot simplify more, spill this node.
+            spill_node = i_graph.find_spill_node()
+            spill_node.set_spill() # When shall we use it?
+            node_stack.append(spill_node)
+            continue
+        i_graph.remove(i_node)
+        node_stack.append(i_node)
+
+    # Select
+    actual_spills = []
+    for i_node in node_stack:
+        neighbour_colors = i_graph.get_neighbour_colors(i_node)
+        usable_colors = neighbour_colors.get_usable_colors()
+        if not usable_colors:
+            # Actual spill
+            i_node.color = None
+            actual_spills.append(i_node)
+        else:
+            i_node.color = usable_colors[0]
+        i_graph.add_back(i_node)
+
+    # Startover
+    if actual_spills:
+        flow_graph.add_spill(actual_spills)
+        return graph_coloring(flow_graph)
+    else:
+        return i_graph.replace_virtual_regs(flow_graph)
+

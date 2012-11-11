@@ -5,6 +5,7 @@ import Control.Monad
 import qualified Data.List as List
 
 import Backend.IR.Operand (Operand (..), Reg (..), getReg)
+import Backend.IR.Temp
 import qualified Backend.IR.Tree as IRTree
 import Backend.X64.Insn
 import Backend.X64.Munch
@@ -34,9 +35,13 @@ main = do
   putStrLn $ show c
   case pairToList c of
     ([Symbol "parse-success", prog], _) -> do
-      let (tree, genState) = IRGen.gen prog
+      let treeM = IRGen.gen prog
+          insnsM = munch treeM
+          (tree, insns) = runTempGen $ do 
+            tree <- treeM
+            insns <- insnsM
+            return (tree, insns)
       putStrLn $ show tree
-      let insns = munchWithNextId tree (IRGen.nextId genState)
       putStrLn $ prettifyDataFlow insns
     ([Symbol "parse-error", what], _) -> putStrLn $ show what
 

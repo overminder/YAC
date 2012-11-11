@@ -1,5 +1,5 @@
 module Frontend.IRGen (
-  GenState(..),
+  IRGen(..),
   gen
 ) where
 
@@ -9,33 +9,23 @@ import qualified Data.Map as Map
 
 import Frontend.ObjModel
 import Backend.IR.Operand
+import Backend.IR.Temp
 import Backend.IR.Tree
 
 type SymTab = Map String Reg
-
-data GenState = GenState {
-  nextId :: Int,
-  symTab :: SymTab
-}
-
-type IRGen = State GenState
-
-emptyGenState = GenState 1 Map.empty
+type IRGen = StateT SymTab TempGen
 
 getNextId :: IRGen Int
-getNextId = do
-  s <- get
-  let i = nextId s
-  put s{nextId=i+1}
-  return i
+getNextId = lift nextTemp
 
 putSymTab :: SymTab -> IRGen ()
-putSymTab tab = do
-  s <- get
-  put s{symTab=tab}
+putSymTab = put
+
+getSymTab :: IRGen SymTab
+getSymTab = get
 
 lookupSymbol :: String -> IRGen (Maybe Reg)
-lookupSymbol name = liftM (Map.lookup name . symTab) get
+lookupSymbol name = liftM (Map.lookup name) getSymTab
 
 memorizeSymbol :: String -> IRGen Reg
 memorizeSymbol name = do
@@ -43,13 +33,13 @@ memorizeSymbol name = do
   case maybeReg of
     Just reg -> return reg
     Nothing -> do
-      tab <- liftM symTab get
+      tab <- getSymTab
       newReg <- liftM PseudoReg getNextId
       putSymTab $ Map.insert name newReg tab
       return newReg
 
-gen :: Cell -> (Tree, GenState)
-gen c = runState (genWith (Pair (Symbol "begin") c)) emptyGenState
+gen :: Cell -> TempGen Tree
+gen c = evalStateT (genWith (Pair (Symbol "begin") c)) Map.empty
 
 genWith :: Cell -> IRGen Tree
 genWith (Fixnum i) = return $ Leaf $ ImmOperand i

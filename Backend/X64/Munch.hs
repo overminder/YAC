@@ -1,6 +1,5 @@
 module Backend.X64.Munch (
-  munch,
-  munchWithNextId
+  munch
 ) where
 
 import Control.Monad.State
@@ -9,47 +8,29 @@ import qualified Data.Map as Map
 
 import qualified Backend.IR.Operand as IROp
 import qualified Backend.IR.Tree as IRTree
+import Backend.IR.Temp
 import Backend.X64.Insn
 
-data MunchState = MunchState {
-  nextId :: Int,
-  insnList :: [Insn]
-}
+type Muncher = StateT MunchState TempGen
+
+type MunchState = [Insn]
 
 emptyMunchState :: MunchState
-emptyMunchState = MunchState {
-  nextId = 1,
-  insnList = []
-}
+emptyMunchState = []
 
-type Muncher = State MunchState
-
-execMunch :: IRTree.Tree -> Int -> MunchState
-execMunch t i = execState (munchTree t) emptyMunchState{nextId=i}
-
-munch :: IRTree.Tree -> [Insn]
-munch = insnList . ((flip execMunch) 1)
-
-munchWithNextId :: IRTree.Tree -> Int -> [Insn]
-munchWithNextId t i = insnList (execMunch t i)
+munch :: TempGen IRTree.Tree -> TempGen MunchState
+munch tM = execStateT (liftM munchTree (lift tM)) emptyMunchState
 
 newPseudoReg :: Muncher Operand
-newPseudoReg = liftM (IROperand . IROp.RegOperand . IROp.PseudoReg) genNextId
+newPseudoReg = liftM toReg (lift nextTemp)
   where
-    genNextId :: Muncher Int
-    genNextId = do
-      s <- get
-      let i = nextId s
-      put s{nextId = i + 1}
-      return i
+    toReg = IROperand . IROp.RegOperand . IROp.PseudoReg
 
 getInsnList :: Muncher [Insn]
-getInsnList = liftM insnList get
+getInsnList = get
 
 putInsnList :: [Insn] -> Muncher ()
-putInsnList is = do
-  s <- get
-  put s{insnList=is}
+putInsnList = put
 
 emitInsn :: Insn -> Muncher ()
 emitInsn i = do
