@@ -18,24 +18,18 @@ type MunchState = [Insn]
 emptyMunchState :: MunchState
 emptyMunchState = []
 
-munch :: TempGen T.Tree -> TempGen MunchState
-munch tM = execStateT (liftM munchTree (lift tM)) emptyMunchState
+munch :: T.Tree -> TempGen MunchState
+munch t = execStateT (munchTree t) emptyMunchState
 
 newPseudoReg :: Muncher Operand
 newPseudoReg = liftM toReg (lift nextTemp)
   where
     toReg = Op_I . RegOp . VReg
 
-getInsnList :: Muncher [Insn]
-getInsnList = get
-
-putInsnList :: [Insn] -> Muncher ()
-putInsnList = put
-
 emitInsn :: Insn -> Muncher ()
 emitInsn i = do
-  is <- getInsnList
-  putInsnList $ is ++ [i]
+  is <- get
+  put $ is ++ [i]
 
 -- Here comes the pattern matcher
 

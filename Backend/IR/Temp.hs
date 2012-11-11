@@ -1,7 +1,7 @@
 module Backend.IR.Temp (
   TempGen,
   nextTemp,
-  runTempGen
+  runTempGen,
 ) where
 
 import Control.Monad.State
@@ -16,4 +16,5 @@ nextTemp = do
 
 runTempGen :: TempGen a -> a
 runTempGen tg = evalState tg 0
+
 

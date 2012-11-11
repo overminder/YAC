@@ -51,6 +51,7 @@ genWith (Symbol name) = do
 genWith p@(Pair _ _) = case pairToList p of
   (lst, Nil) -> genWithList lst
   otherwise -> error ("Not a proper list to evaluate: " ++ show p)
+genWith Nil = error "Unexpected nil in source code: ()"
 
 genWithList :: [Cell] -> IRGen Tree
 genWithList [Symbol "+", lhs, rhs] = do

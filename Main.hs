@@ -30,18 +30,16 @@ prettifyDataFlow insnList = List.intercalate "\n" outputStrList
         else s
 
 main = do
-  input <- liftM (!!0) getArgs
+  input <- getContents
   let c = readProg input
-  putStrLn $ show c
+  putStrLn $ "\t.parse-result\n" ++ show c
   case pairToList c of
     ([Symbol "parse-success", prog], _) -> do
-      let treeM = IRGen.gen prog
-          insnsM = munch treeM
-          (tree, insns) = runTempGen $ do 
-            tree <- treeM
-            insns <- insnsM
+      let (tree, insns) = runTempGen $ do 
+            tree <- IRGen.gen prog
+            insns <- munch tree
             return (tree, insns)
-      putStrLn $ show tree
-      putStrLn $ prettifyDataFlow insns
+      putStrLn $ "\t.ir-tree\n" ++ show tree
+      putStrLn $ "\t.insn\n" ++ prettifyDataFlow insns
     ([Symbol "parse-error", what], _) -> putStrLn $ show what
 

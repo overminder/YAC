@@ -64,6 +64,6 @@ parseCell = parseAtom
 
 parseProg :: Parser Cell
 parseProg = do
-  cs <- sepBy parseCell (many space)
+  cs <- endBy parseCell (many space)
   return $ listToCell cs
 
