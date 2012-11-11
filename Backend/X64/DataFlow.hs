@@ -9,12 +9,12 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.List as List
 
-import qualified Backend.IR.Operand as IROp
+import Backend.IR.Oprnd
 import Backend.X64.Insn
 
 data DefUse = DefUse {
-  getDef :: [IROp.Reg],
-  getUse :: [IROp.Reg]
+  getDef :: [Reg],
+  getUse :: [Reg]
 }
 
 mergeDefUse :: DefUse -> DefUse -> DefUse
@@ -45,29 +45,29 @@ makeDefUse defs uses = mergeDefUse du0 du1
     du1 = foldr (mergeDefUse . fromUse) emptyDefUse uses
 
     fromDef :: Operand -> DefUse
-    fromDef (IROperand (IROp.RegOperand r)) = emptyDefUse{getDef=[r]}
-    fromDef (X64Operand (Address base index _ _)) =
+    fromDef (Op_I (RegOp r)) = emptyDefUse{getDef=[r]}
+    fromDef (Op_M (Address base index _ _)) =
       emptyDefUse{getUse=[base] ++ justToList index}
     fromDef _ = emptyDefUse
     fromUse :: Operand -> DefUse
-    fromUse (IROperand (IROp.RegOperand r)) = emptyDefUse{getUse=[r]}
-    fromUse (X64Operand (Address base index _ _)) =
+    fromUse (Op_I (RegOp r)) = emptyDefUse{getUse=[r]}
+    fromUse (Op_M (Address base index _ _)) =
       emptyDefUse{getUse=[base] ++ justToList index}
     fromUse _ = emptyDefUse
 
     isReg :: Operand -> Bool
-    isReg (IROperand (IROp.RegOperand _)) = True
+    isReg (Op_I (RegOp _)) = True
     isReg _ = False
 
-    unReg :: Operand -> IROp.Reg
-    unReg (IROperand (IROp.RegOperand r)) = r
+    unReg :: Operand -> Reg
+    unReg (Op_I (RegOp r)) = r
 
     justToList (Just a) = [a]
     justToList Nothing = []
 
 -- actually it's the live var when entering the insn
 data Liveness = Liveness {
-  getLiveVars :: [IROp.Reg]
+  getLiveVars :: [Reg]
 }
 instance Show Liveness where
   show lv = "live=" ++ show (getLiveVars lv)
@@ -96,7 +96,7 @@ getLiveness = List.init . (foldr combine [emptyLiveness])
     getLiveness' du nextLv = 
       Liveness $ List.union (foldr checkDef [] (getLiveVars nextLv)) (getUse du)
       where
-        checkDef :: IROp.Reg -> [IROp.Reg] -> [IROp.Reg]
+        checkDef :: Reg -> [Reg] -> [Reg]
         checkDef x =
           if x `elem` (getDef du)
             then id

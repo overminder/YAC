@@ -4,7 +4,7 @@ import System
 import Control.Monad
 import qualified Data.List as List
 
-import Backend.IR.Operand (Operand (..), Reg (..), getReg)
+import Backend.IR.Oprnd (Oprnd (..), Reg (..), getReg)
 import Backend.IR.Temp
 import qualified Backend.IR.Tree as IRTree
 import Backend.X64.Insn

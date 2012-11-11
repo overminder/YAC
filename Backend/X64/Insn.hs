@@ -8,8 +8,7 @@ module Backend.X64.Insn (
 ) where
 
 import Data.List (intercalate)
-import qualified Backend.IR.Operand as IROp
-import qualified Backend.IR.Tree as IRTree
+import Backend.IR.Oprnd
 
 data Scale = Scale1 | Scale2 | Scale4 | Scale8
   deriving (Eq, Ord)
@@ -23,7 +22,7 @@ scaleToInt Scale8 = 8
 instance Show Scale where
   show s = show (scaleToInt s)
 
-data Address = Address IROp.Reg (Maybe IROp.Reg) Scale Int
+data Address = Address Reg (Maybe Reg) Scale Int
   deriving (Eq, Ord)
 
 instance Show Address where
@@ -35,7 +34,7 @@ instance Show Address where
       showDisp 0 = ""
       showDisp disp = show disp
 
-      showIndex :: Maybe IROp.Reg -> String
+      showIndex :: Maybe Reg -> String
       showIndex (Just r) = show r
       showIndex Nothing = ""
 
@@ -43,14 +42,14 @@ instance Show Address where
       showScale Scale1 = ""
       showScale s = show s
 
--- Messy
-data Operand = IROperand IROp.Operand
-             | X64Operand Address
+-- Op_I -> IR operand | Op_M -> machine-dependent operand
+data Operand = Op_I Oprnd
+             | Op_M Address
   deriving (Eq, Ord)
 
 instance Show Operand where
-  show (IROperand op) = show op
-  show (X64Operand op) = show op
+  show (Op_I op) = show op
+  show (Op_M op) = show op
 
 data Cond = Ge | Gt | Le | Lt | Eq | Ne
   deriving (Show, Eq)
