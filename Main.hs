@@ -9,8 +9,9 @@ import Backend.IR.Temp
 import qualified Backend.IR.Tree as IRTree
 import Backend.X64.Insn
 import Backend.X64.Munch
+import Backend.X64.RegAlloc
 --import qualified Backend.X64.RegAlloc as RegAlloc
-import qualified Backend.X64.DataFlow as DataFlow
+import Backend.X64.DataFlow
 
 import Frontend.ObjModel
 import Frontend.Parser
@@ -19,8 +20,8 @@ import qualified Frontend.IRGen as IRGen
 prettifyDataFlow :: [Insn] -> String
 prettifyDataFlow insnList = List.intercalate "\n" outputStrList
   where
-    duList = map DataFlow.getDefUse insnList
-    lvList = DataFlow.getLiveness duList
+    duList = map getDefUse insnList
+    lvList = getLiveness duList
     outputStrList = map prettify (List.zip3 insnList duList lvList)
     prettify (insn,du,lv) = leftAlign (show insn) 30 ++ ";; " ++ 
       show du ++ "| " ++ show lv
@@ -41,5 +42,7 @@ main = do
             return (tree, insns)
       putStrLn $ "\t.ir-tree\n" ++ show tree
       putStrLn $ "\t.insn\n" ++ prettifyDataFlow insns
+      putStrLn $ "\t.live-range\n" ++ show (
+        getLiveRange (getLiveness (map getDefUse insns)))
     ([Symbol "parse-error", what], _) -> putStrLn $ show what
 

@@ -10,4 +10,4 @@ Usage
 
   ``ghc --make Main``
 
-  ``./Main "(define a 1) (define b 2) (define c (+ a b))"``
+  ``echo "(define a 1) (define b 2) (define c (+ a b))" | ./Main``
