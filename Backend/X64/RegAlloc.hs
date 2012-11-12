@@ -1,6 +1,7 @@
 module Backend.X64.RegAlloc (
   getLiveRange,
-  alloc
+  alloc,
+  runAlloc
 ) where
 
 import Control.Monad.State
@@ -21,8 +22,10 @@ allRegs = map MReg ["rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi",
 [rax, rcx, rdx, rbx, rsp, rbp, rsi, rdi, r8, r9, r10, r11, r12, r13, r14, r15]
   = allRegs
 
-usableRegs = [rax, rbx, rcx, rdx, rdi, rsi,
-    r8, r9, r10, r11, r12, r13, r14, r15]
+scratchRegs = [r13, r14, r15]
+
+usableRegs = filter (\x -> notElem x scratchRegs) [rax, rbx, rcx, rdx, rdi,
+  rsi, r8, r9, r10, r11, r12, r13, r14, r15]
 
 regCount = length usableRegs
 
@@ -30,11 +33,20 @@ regCount = length usableRegs
 data AllocState = AllocState {
   freeRegs :: [Reg],
   activeIntervals :: [Interval],
-  registers :: Map Interval Reg,
-  location :: Map Interval StackLoc,
   stackLocGen :: StackLocGen,
-  stackSize :: Int
+  stackSize :: Int,
+  regUses :: Map Reg StorageType,
+  tempRegs :: [Reg]
 }
+  deriving (Show)
+
+data StorageType = InReg Reg
+                 | InStack StackLoc
+  deriving (Show, Eq)
+
+isInStack :: StorageType -> Bool
+isInStack (InStack _) = True
+isInStack _ = False
 
 -- Reg start end
 type Interval = (Reg, Int, Int)
@@ -45,10 +57,10 @@ emptyAllocState :: AllocState
 emptyAllocState = AllocState {
   freeRegs = usableRegs,
   activeIntervals = [],
-  registers = Map.empty,
-  location = Map.empty,
-  stackLocGen = 0,
-  stackSize = 0
+  stackLocGen = (-wordSize),
+  stackSize = 0,
+  regUses = Map.empty,
+  tempRegs = scratchRegs
 }
 
 type StackLoc = Int
@@ -59,30 +71,13 @@ wordSize = 8
 
 newStackLoc :: AllocGen StackLoc
 newStackLoc = do
-  newLoc <- liftM ((-)wordSize . stackLocGen) get
+  newLoc <- liftM stackLocGen get
   modify $ \st -> st {
-    stackLocGen = newLoc,
+    stackLocGen = newLoc - wordSize,
     stackSize = wordSize + stackSize st
   }
   return newLoc
 
-setRegister :: Interval -> Reg -> AllocGen ()
-setRegister iVal r = do
-  modify $ \st -> st {
-    registers = Map.insert iVal r (registers st)
-  }
-
-getRegister :: Interval -> AllocGen Reg
-getRegister iVal = do
-  rMap <- liftM registers get
-  let (Just r) = Map.lookup iVal rMap
-  return r
-
-setLocation :: Interval -> StackLoc -> AllocGen ()
-setLocation iVal loc = do
-  modify $ \st -> st {
-    location = Map.insert iVal loc (location st)
-  }
 
 addActiveInterval :: Interval -> AllocGen ()
 addActiveInterval newVal = do
@@ -90,6 +85,19 @@ addActiveInterval newVal = do
   modify $ \st -> st {
     activeIntervals = List.sortBy compareInterval (newVal:actVals)
   }
+
+setStorageType :: Reg -> StorageType -> AllocGen ()
+setStorageType r sty = do
+  regMap <- liftM regUses get
+  modify $ \st -> st {
+    regUses = Map.insert r sty regMap
+  }
+
+getStorageType :: Reg -> AllocGen StorageType
+getStorageType r = do
+  regMap <- liftM regUses get
+  let (Just sty) = Map.lookup r regMap
+  return sty
 
 removeActiveInterval :: Interval -> AllocGen ()
 removeActiveInterval rmVal = do
@@ -99,27 +107,66 @@ removeActiveInterval rmVal = do
   }
 
 alloc :: [Insn] -> [Liveness] -> TempGen [Insn]
-alloc insnList lvs = evalStateT res emptyAllocState
-  where
-    lvMap = getLiveRange lvs
-    sortedLvs = sortedLiveRange lvMap
-    res = do
-      forM_ sortedLvs $ \val -> do
-        expireOldIntervals val
-        activeLen <- liftM (length . activeIntervals) get
-        if activeLen == regCount
-          then spillAtInterval val
-          else do
-            r <- allocReg
-            addActiveInterval val
-      mapM replaceVReg (zip [0..] insnList)
+alloc insnList lvs = evalStateT (alloc' insnList lvs) emptyAllocState
 
-replaceVReg :: (Int, Insn) -> AllocGen Insn
-replaceVReg (idx, insn) = do
-  let oldRegs = regsOfInsn insn
-      newRegs = oldRegs
-      newInsn = setRegsOfInsn newRegs insn
-  return newInsn
+runAlloc :: [Insn] -> [Liveness] -> TempGen ([Insn], AllocState)
+runAlloc insnList lvs = runStateT (alloc' insnList lvs) emptyAllocState
+
+alloc' :: [Insn] -> [Liveness] -> AllocGen [Insn]
+alloc' insnList lvs = do
+  let lvMap = getLiveRange lvs
+      sortedLvs = sortedLiveRange lvMap
+  forM_ sortedLvs $ \iVal@(iReg, _, _) -> do
+    expireOldIntervals iVal
+    activeLen <- liftM (length . activeIntervals) get
+    if activeLen == regCount
+      then spillAtInterval iVal
+      else do
+        r <- allocReg
+        addActiveInterval iVal
+        setStorageType iReg (InReg r)
+  liftM concat $ mapM materialize insnList
+
+-- Replaces virtual registers in insn and adds spilling instructions if needed.
+-- XXX Also does dead-code elimination when possible.
+materialize :: Insn -> AllocGen [Insn]
+materialize insn = do
+  regMap <- liftM regUses get
+  let du = getDefUse insn
+  if any (flip Map.notMember regMap) (getUse du ++ getDef du)
+    then return []
+    else do
+      let getItem r = case Map.lookup r regMap of
+            (Just result) -> result
+            Nothing -> error $ "Cannot find " ++ show r
+          loadRegs = filter (isInStack . getItem) (getUse du)
+          storeRegs = filter (isInStack . getItem) (getDef du)
+          totalRegs = loadRegs `List.union` storeRegs
+      --
+      tempMap <- liftM Map.fromList $ forM totalRegs $ \r -> do
+        let (InStack loc) = getItem r
+        tempReg <- allocTempReg
+        let loadInsn = Mov (X64Op_I (IROp_R tempReg))
+                           (X64Op_M (Address rbp Nothing Scale1 loc))
+            storeInsn = Mov (X64Op_M (Address rbp Nothing Scale1 loc))
+                            (X64Op_I (IROp_R tempReg))
+        return (r, (tempReg, loadInsn, storeInsn))
+      --
+      let loads = map (\r -> chooseLoad (tempMap Map.! r)) loadRegs
+          stores = map (\r -> chooseStore (tempMap Map.! r)) storeRegs
+          chooseTemp (x, _, _) = x
+          chooseLoad (_, x, _) = x
+          chooseStore (_, _, x) = x
+          mRegForVReg reg = case reg of
+            mReg@(MReg _) -> mReg
+            vReg@(VReg _) -> case Map.lookup vReg tempMap of
+              (Just mRegInfo) -> chooseTemp mRegInfo
+              Nothing -> case Map.lookup vReg regMap of
+                (Just (InReg mReg)) -> mReg
+                _ -> error "RegAlloc.meterialize: Internal Error"
+      
+      mapM (freeTempReg . chooseTemp) (Map.elems tempMap) -- give back
+      return $ loads ++ [replaceVReg mRegForVReg insn] ++ stores
 
 expireOldIntervals :: Interval -> AllocGen ()
 expireOldIntervals val = do
@@ -129,11 +176,13 @@ expireOldIntervals val = do
 expireOldIntervals' :: [Interval] -> Interval -> AllocGen ()
 expireOldIntervals' [] _ = return ()
 expireOldIntervals' (j@(jReg, jStart, jEnd):vs) i@(iReg, iStart, iEnd) = do
-  if (jEnd > iStart)
+  if (jEnd >= iStart) {- Different from poletto (he uses >):
+                         our live range overlaps. -}
     then return () -- we are done
     else do
       removeActiveInterval j
-      freeReg jReg
+      (InReg jMachReg) <- getStorageType jReg
+      freeReg jMachReg
       expireOldIntervals' vs i
 
 getLastInterval :: AllocGen Interval
@@ -144,16 +193,15 @@ spillAtInterval iVal@(iReg, iStart, iEnd) = do
   spill@(sReg, sStart, sEnd) <- getLastInterval
   if sEnd > iEnd
     then do
-      r <- getRegister spill
-      setRegister iVal r
+      (InReg r) <- getStorageType sReg
       loc <- newStackLoc
-      setLocation spill loc
+      setStorageType sReg (InStack loc)
+      setStorageType iReg (InReg r)
       removeActiveInterval spill
       addActiveInterval iVal
     else do
       loc <- newStackLoc
-      setLocation iVal loc
-      
+      setStorageType iReg (InStack loc)
   return ()
 
 allocReg :: AllocGen Reg
@@ -169,6 +217,21 @@ freeReg r = do
   frs <- liftM freeRegs get
   modify $ \st -> st {
     freeRegs = (r:frs)
+  }
+
+allocTempReg :: AllocGen Reg
+allocTempReg = do
+  (r:trs) <- liftM tempRegs get
+  modify $ \st -> st {
+    tempRegs = trs
+  }
+  return r
+
+freeTempReg :: Reg -> AllocGen ()
+freeTempReg r = do
+  trs <- liftM freeRegs get
+  modify $ \st -> st {
+    tempRegs = (r:trs)
   }
 
 -- Internally used for live range calculating

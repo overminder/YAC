@@ -5,8 +5,7 @@ module Backend.X64.Insn (
   Cond(..),
   Label(..),
   Insn(..),
-  regsOfInsn,
-  setRegsOfInsn
+  replaceVReg,
 ) where
 
 import Data.List (intercalate)
@@ -104,9 +103,32 @@ instance Show Insn where
   show Ret = "ret"
   show (BindLabel label) = showLabel label
 
-regsOfInsn :: Insn -> [Reg]
-regsOfInsn insn = undefined
+replaceVReg :: (Reg -> Reg) -> Insn -> Insn
+replaceVReg f insn = setOpsOfInsn (map (replaceOp f) (opsOfInsn insn)) insn
 
-setRegsOfInsn :: [Reg] -> Insn -> Insn
-setRegsOfInsn rs insn = undefined
+opsOfInsn :: Insn -> [X64Op]
+opsOfInsn (Add op0 op1) = [op0, op1]
+opsOfInsn (Sub op0 op1) = [op0, op1]
+opsOfInsn (Cmp op0 op1) = [op0, op1]
+opsOfInsn (Lea op0 op1) = [op0, op1]
+opsOfInsn (Mov op0 op1) = [op0, op1]
+opsOfInsn (Push op0)    = [op0]
+opsOfInsn (Pop op0)     = [op0]
+opsOfInsn _             = []
+
+setOpsOfInsn :: [X64Op] -> Insn -> Insn
+setOpsOfInsn [op0, op1] (Add _ _) = Add op0 op1
+setOpsOfInsn [op0, op1] (Sub _ _) = Sub op0 op1
+setOpsOfInsn [op0, op1] (Cmp _ _) = Cmp op0 op1
+setOpsOfInsn [op0, op1] (Lea _ _) = Lea op0 op1
+setOpsOfInsn [op0, op1] (Mov _ _) = Mov op0 op1
+setOpsOfInsn [op0]      (Push _)  = Push op0
+setOpsOfInsn [op0]      (Pop _)   = Pop op0
+setOpsOfInsn []         insn@_    = insn
+
+replaceOp :: (Reg -> Reg) -> X64Op -> X64Op
+replaceOp f (X64Op_I (IROp_R vReg@(VReg _))) = X64Op_I (IROp_R $ f vReg)
+replaceOp f (X64Op_M (Address r0 maybeR1 scale imm))
+  = X64Op_M (Address (f r0) (fmap f maybeR1) scale imm)
+replaceOp f op@_ = op
 

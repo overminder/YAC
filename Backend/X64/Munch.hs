@@ -11,7 +11,7 @@ import qualified Backend.IR.Tree as T
 import Backend.IR.Temp
 import Backend.X64.Insn
 
-type Muncher = StateT MunchState TempGen
+type MunchGen = StateT MunchState TempGen
 
 type MunchState = [Insn]
 
@@ -19,21 +19,23 @@ emptyMunchState :: MunchState
 emptyMunchState = []
 
 munch :: T.Tree -> TempGen MunchState
-munch t = execStateT (munchTree t) emptyMunchState
+munch t = execStateT (munch' t) emptyMunchState
 
-newPseudoReg :: Muncher X64Op
+munch' = munchTree
+
+newPseudoReg :: MunchGen X64Op
 newPseudoReg = liftM toReg (lift nextTemp)
   where
     toReg = X64Op_I . IROp_R . VReg
 
-emitInsn :: Insn -> Muncher ()
+emitInsn :: Insn -> MunchGen ()
 emitInsn i = do
   is <- get
   put $ is ++ [i]
 
 -- Here comes the pattern matcher
 
-munchTree :: T.Tree -> Muncher (Maybe X64Op)
+munchTree :: T.Tree -> MunchGen (Maybe X64Op)
 munchTree (T.Add t0 t1) = do
   (Just rand0) <- munchTree t0
   (Just rand1) <- munchTree t1
@@ -62,7 +64,7 @@ munchTree (T.Add t0 t1) = do
 -- XXX: manual munch will produce good code at the expense of duplicated
 -- code and harder maintainence cost... what to?
 munchTree (T.Move (T.Leaf r0@(IROp_R _))
-                       (T.Add t1 t2)) = do
+                  (T.Add t1 t2)) = do
   (Just rand1) <- munchTree t1
   (Just rand2) <- munchTree t2
   munchMoveAdd rand1 rand2

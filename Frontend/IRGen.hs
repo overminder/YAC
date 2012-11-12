@@ -39,7 +39,10 @@ memorizeSymbol name = do
       return newReg
 
 gen :: Cell -> TempGen Tree
-gen c = evalStateT (genWith (Pair (Symbol "begin") c)) Map.empty
+gen c = evalStateT (gen' c) Map.empty
+
+gen' :: Cell -> IRGen Tree
+gen' c = genWith (Pair (Symbol "begin") c)
 
 genWith :: Cell -> IRGen Tree
 genWith (Fixnum i) = return $ Leaf $ IROp_I i
@@ -54,10 +57,13 @@ genWith p@(Pair _ _) = case pairToList p of
 genWith Nil = error "Unexpected nil in source code: ()"
 
 genWithList :: [Cell] -> IRGen Tree
-genWithList [Symbol "+", lhs, rhs] = do
-  lTree <- genWith lhs
-  rTree <- genWith rhs
-  return $ Add lTree rTree
+genWithList ((Symbol "+"):xs) = case xs of
+  [] -> return $ Leaf (IROp_I 0)
+  [x] -> genWith x
+  _ -> do
+    (t0:t1:ts) <- mapM genWith xs
+    return $ foldl Add (Add t0 t1) ts
+
 genWithList lst@[Symbol "define", Symbol name, expr] = do
   maybeReg <- lookupSymbol name
   case maybeReg of
