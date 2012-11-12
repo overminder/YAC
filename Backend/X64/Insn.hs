@@ -1,14 +1,16 @@
 module Backend.X64.Insn (
   Scale(..),
   Address(..),
-  Operand(..),
+  X64Op(..),
   Cond(..),
   Label(..),
-  Insn(..)
+  Insn(..),
+  regsOfInsn,
+  setRegsOfInsn
 ) where
 
 import Data.List (intercalate)
-import Backend.IR.Oprnd
+import Backend.IR.IROp
 
 data Scale = Scale1 | Scale2 | Scale4 | Scale8
   deriving (Eq, Ord)
@@ -43,13 +45,13 @@ instance Show Address where
       showScale s = show s
 
 -- Op_I -> IR operand | Op_M -> machine-dependent operand
-data Operand = Op_I Oprnd
-             | Op_M Address
+data X64Op = X64Op_I IROp
+           | X64Op_M Address
   deriving (Eq, Ord)
 
-instance Show Operand where
-  show (Op_I op) = show op
-  show (Op_M op) = show op
+instance Show X64Op where
+  show (X64Op_I op) = show op
+  show (X64Op_M op) = show op
 
 data Cond = Ge | Gt | Le | Lt | Eq | Ne
   deriving (Show, Eq)
@@ -71,16 +73,16 @@ unLabel (Label label) = label
 showLabel :: Label -> String
 showLabel = (++":") . unLabel
 
-data Insn = Add Operand Operand
-          | Sub Operand Operand
+data Insn = Add X64Op X64Op
+          | Sub X64Op X64Op
           | Call Label
-          | Cmp Operand Operand
+          | Cmp X64Op X64Op
           | J Cond Label
           | Jmp Label
-          | Lea Operand Operand
-          | Mov Operand Operand
-          | Push Operand
-          | Pop Operand
+          | Lea X64Op X64Op
+          | Mov X64Op X64Op
+          | Push X64Op
+          | Pop X64Op
           | Ret
           | BindLabel Label
   deriving (Eq)
@@ -102,4 +104,9 @@ instance Show Insn where
   show Ret = "ret"
   show (BindLabel label) = showLabel label
 
+regsOfInsn :: Insn -> [Reg]
+regsOfInsn insn = undefined
+
+setRegsOfInsn :: [Reg] -> Insn -> Insn
+setRegsOfInsn rs insn = undefined
 

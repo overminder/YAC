@@ -4,14 +4,14 @@ import System
 import Control.Monad
 import qualified Data.List as List
 
-import Backend.IR.Oprnd (Oprnd (..), Reg (..), getReg)
+import Backend.IR.IROp (IROp (..), Reg (..), getReg)
 import Backend.IR.Temp
 import qualified Backend.IR.Tree as IRTree
 import Backend.X64.Insn
 import Backend.X64.Munch
+import Backend.X64.DataFlow
 import Backend.X64.RegAlloc
 --import qualified Backend.X64.RegAlloc as RegAlloc
-import Backend.X64.DataFlow
 
 import Frontend.ObjModel
 import Frontend.Parser
@@ -36,13 +36,16 @@ main = do
   putStrLn $ "\t.parse-result\n" ++ show c
   case pairToList c of
     ([Symbol "parse-success", prog], _) -> do
-      let (tree, insns) = runTempGen $ do 
+      let (tree, insns, newInsns) = runTempGen $ do 
             tree <- IRGen.gen prog
             insns <- munch tree
-            return (tree, insns)
+            let lvs = getLiveness (map getDefUse insns)
+            newInsns <- alloc insns lvs
+            return (tree, insns, newInsns)
       putStrLn $ "\t.ir-tree\n" ++ show tree
       putStrLn $ "\t.insn\n" ++ prettifyDataFlow insns
       putStrLn $ "\t.live-range\n" ++ show (
         getLiveRange (getLiveness (map getDefUse insns)))
+      putStrLn $ "\t.regalloc-insn\n" ++ prettifyDataFlow newInsns
     ([Symbol "parse-error", what], _) -> putStrLn $ show what
 

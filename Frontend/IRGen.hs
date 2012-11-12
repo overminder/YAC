@@ -8,7 +8,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 
 import Frontend.ObjModel
-import Backend.IR.Oprnd
+import Backend.IR.IROp
 import Backend.IR.Temp
 import Backend.IR.Tree
 
@@ -42,11 +42,11 @@ gen :: Cell -> TempGen Tree
 gen c = evalStateT (genWith (Pair (Symbol "begin") c)) Map.empty
 
 genWith :: Cell -> IRGen Tree
-genWith (Fixnum i) = return $ Leaf $ ImmOp i
+genWith (Fixnum i) = return $ Leaf $ IROp_I i
 genWith (Symbol name) = do
   maybeReg <- lookupSymbol name
   case maybeReg of
-    Just reg -> return $ Leaf $ RegOp reg
+    Just reg -> return $ Leaf $ IROp_R reg
     Nothing -> error ("Refering to an unbound variable: " ++ name)
 genWith p@(Pair _ _) = case pairToList p of
   (lst, Nil) -> genWithList lst
@@ -66,13 +66,13 @@ genWithList lst@[Symbol "define", Symbol name, expr] = do
     Nothing -> do
       exprTree <- genWith expr
       reg <- memorizeSymbol name
-      return $ Move (Leaf $ RegOp reg) exprTree
+      return $ Move (Leaf $ IROp_R reg) exprTree
 genWithList lst@[Symbol "set!", Symbol name, expr] = do
   maybeReg <- lookupSymbol name
   case maybeReg of
     Just reg -> do
       exprTree <- genWith expr
-      return $ Move (Leaf $ RegOp reg) exprTree
+      return $ Move (Leaf $ IROp_R reg) exprTree
     Nothing -> error ("Unbound variable at #set!: " ++ (show $ listToCell lst))
 genWithList ((Symbol "begin"):xs) = do
   trees <- mapM genWith xs

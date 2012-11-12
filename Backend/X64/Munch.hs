@@ -6,7 +6,7 @@ import Control.Monad.State
 import Data.Map (Map)
 import qualified Data.Map as Map
 
-import Backend.IR.Oprnd
+import Backend.IR.IROp
 import qualified Backend.IR.Tree as T
 import Backend.IR.Temp
 import Backend.X64.Insn
@@ -21,10 +21,10 @@ emptyMunchState = []
 munch :: T.Tree -> TempGen MunchState
 munch t = execStateT (munchTree t) emptyMunchState
 
-newPseudoReg :: Muncher Operand
+newPseudoReg :: Muncher X64Op
 newPseudoReg = liftM toReg (lift nextTemp)
   where
-    toReg = Op_I . RegOp . VReg
+    toReg = X64Op_I . IROp_R . VReg
 
 emitInsn :: Insn -> Muncher ()
 emitInsn i = do
@@ -33,68 +33,68 @@ emitInsn i = do
 
 -- Here comes the pattern matcher
 
-munchTree :: T.Tree -> Muncher (Maybe Operand)
+munchTree :: T.Tree -> Muncher (Maybe X64Op)
 munchTree (T.Add t0 t1) = do
   (Just rand0) <- munchTree t0
   (Just rand1) <- munchTree t1
   munchAdd rand0 rand1
   where
-    munchAdd (Op_I (ImmOp i0))
-             (Op_I (ImmOp i1)) = do
-      return $ Just $ Op_I $ ImmOp $ i0 + i1
+    munchAdd (X64Op_I (IROp_I i0))
+             (X64Op_I (IROp_I i1)) = do
+      return $ Just $ X64Op_I $ IROp_I $ i0 + i1
 
-    munchAdd (Op_I (RegOp r0))
-             (Op_I (ImmOp i0)) = do
+    munchAdd (X64Op_I (IROp_R r0))
+             (X64Op_I (IROp_I i0)) = do
       tempReg <- newPseudoReg
-      emitInsn (Lea tempReg (Op_M (Address r0 Nothing Scale1 i0)))
+      emitInsn (Lea tempReg (X64Op_M (Address r0 Nothing Scale1 i0)))
       return $ Just tempReg
 
-    munchAdd i0@(Op_I (ImmOp _))
-             r0@(Op_I (RegOp _)) =
+    munchAdd i0@(X64Op_I (IROp_I _))
+             r0@(X64Op_I (IROp_R _)) =
       munchAdd r0 i0
 
-    munchAdd (Op_I (RegOp r0))
-             (Op_I (RegOp r1)) = do
+    munchAdd (X64Op_I (IROp_R r0))
+             (X64Op_I (IROp_R r1)) = do
       tempReg <- newPseudoReg
-      emitInsn (Lea tempReg (Op_M (Address r0 (Just r1) Scale1 0)))
+      emitInsn (Lea tempReg (X64Op_M (Address r0 (Just r1) Scale1 0)))
       return $ Just tempReg
 
 -- XXX: manual munch will produce good code at the expense of duplicated
 -- code and harder maintainence cost... what to?
-munchTree (T.Move (T.Leaf r0@(RegOp _))
+munchTree (T.Move (T.Leaf r0@(IROp_R _))
                        (T.Add t1 t2)) = do
   (Just rand1) <- munchTree t1
   (Just rand2) <- munchTree t2
   munchMoveAdd rand1 rand2
   return Nothing
   where
-    munchMoveAdd (Op_I (RegOp r1))
-                 (Op_I (RegOp r2)) = do
-      emitInsn (Lea (Op_I r0)
-                    (Op_M (Address r1 (Just r2) Scale1 0)))
+    munchMoveAdd (X64Op_I (IROp_R r1))
+                 (X64Op_I (IROp_R r2)) = do
+      emitInsn (Lea (X64Op_I r0)
+                    (X64Op_M (Address r1 (Just r2) Scale1 0)))
 
-    munchMoveAdd (Op_I (RegOp r1))
-                 (Op_I (ImmOp i2)) = do
-      emitInsn (Lea (Op_I r0)
-                    (Op_M (Address r1 Nothing Scale1 i2)))
+    munchMoveAdd (X64Op_I (IROp_R r1))
+                 (X64Op_I (IROp_I i2)) = do
+      emitInsn (Lea (X64Op_I r0)
+                    (X64Op_M (Address r1 Nothing Scale1 i2)))
 
-    munchMoveAdd i1@(Op_I (ImmOp _))
-                 r2@(Op_I (RegOp _)) = do
+    munchMoveAdd i1@(X64Op_I (IROp_I _))
+                 r2@(X64Op_I (IROp_R _)) = do
       munchMoveAdd r2 i1
 
-    munchMoveAdd (Op_I (ImmOp i1))
-                 (Op_I (ImmOp i2)) = do
-      emitInsn (Mov (Op_I r0) (Op_I (ImmOp $ i1 + i2)))
+    munchMoveAdd (X64Op_I (IROp_I i1))
+                 (X64Op_I (IROp_I i2)) = do
+      emitInsn (Mov (X64Op_I r0) (X64Op_I (IROp_I $ i1 + i2)))
 
-munchTree (T.Move (T.Leaf r0@(RegOp _)) t1) = do
+munchTree (T.Move (T.Leaf r0@(IROp_R _)) t1) = do
   (Just rand1) <- munchTree t1
   munchMove rand1
   return Nothing
   where
-    munchMove i0@(Op_I (ImmOp _)) = do
-      emitInsn (Mov (Op_I r0) i0)
-    munchMove r1@(Op_I (RegOp _)) = do
-      emitInsn (Mov (Op_I r0) r1)
+    munchMove i0@(X64Op_I (IROp_I _)) = do
+      emitInsn (Mov (X64Op_I r0) i0)
+    munchMove r1@(X64Op_I (IROp_R _)) = do
+      emitInsn (Mov (X64Op_I r0) r1)
 
 munchTree (T.Move (T.Deref t0) t1) = do
   (Just rand0) <- munchTree t0
@@ -102,26 +102,26 @@ munchTree (T.Move (T.Deref t0) t1) = do
   munchMove rand0 rand1
   return Nothing
   where
-    munchMove (Op_I (RegOp r0))
-              r1@(Op_I (RegOp _)) = do
-      emitInsn (Mov (Op_M (Address r0 Nothing Scale1 0)) r1)
-    munchMove (Op_I (RegOp r0))
-              i0@(Op_I (ImmOp ival)) = do
+    munchMove (X64Op_I (IROp_R r0))
+              r1@(X64Op_I (IROp_R _)) = do
+      emitInsn (Mov (X64Op_M (Address r0 Nothing Scale1 0)) r1)
+    munchMove (X64Op_I (IROp_R r0))
+              i0@(X64Op_I (IROp_I ival)) = do
       if isInt32 ival
         then do
-          emitInsn (Mov (Op_M (Address r0 Nothing Scale1 0)) i0)
+          emitInsn (Mov (X64Op_M (Address r0 Nothing Scale1 0)) i0)
         else do
           tempReg <- newPseudoReg
           emitInsn (Mov tempReg i0)
-          emitInsn (Mov (Op_M (Address r0 Nothing Scale1 0)) tempReg)
+          emitInsn (Mov (X64Op_M (Address r0 Nothing Scale1 0)) tempReg)
 
 munchTree (T.Deref t) = do
   (Just rand) <- munchTree t
   munchDeref rand
   where
-    munchDeref (Op_I (RegOp r)) = do
+    munchDeref (X64Op_I (IROp_R r)) = do
       tempReg <- newPseudoReg
-      emitInsn (Mov tempReg (Op_M (Address r Nothing Scale1 0)))
+      emitInsn (Mov tempReg (X64Op_M (Address r Nothing Scale1 0)))
       return (Just tempReg)
 
 munchTree (T.Seq t0 t1) = do
@@ -130,7 +130,7 @@ munchTree (T.Seq t0 t1) = do
   return Nothing
 
 munchTree (T.Leaf op) = do
-  return $ Just $ Op_I op
+  return $ Just $ X64Op_I op
 
 munchTree T.Nop = return Nothing
 

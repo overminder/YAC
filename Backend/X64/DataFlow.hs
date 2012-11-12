@@ -9,7 +9,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.List as List
 
-import Backend.IR.Oprnd
+import Backend.IR.IROp
 import Backend.X64.Insn
 
 data DefUse = DefUse {
@@ -38,29 +38,29 @@ getDefUse (Push src) = makeDefUse [] [src]
 getDefUse (Pop dest) = makeDefUse [dest] []
 getDefUse _ = emptyDefUse
 
-makeDefUse :: [Operand] -> [Operand] -> DefUse
+makeDefUse :: [X64Op] -> [X64Op] -> DefUse
 makeDefUse defs uses = mergeDefUse du0 du1
   where
     du0 = foldr (mergeDefUse . fromDef) emptyDefUse defs
     du1 = foldr (mergeDefUse . fromUse) emptyDefUse uses
 
-    fromDef :: Operand -> DefUse
-    fromDef (Op_I (RegOp r)) = emptyDefUse{getDef=[r]}
-    fromDef (Op_M (Address base index _ _)) =
+    fromDef :: X64Op -> DefUse
+    fromDef (X64Op_I (IROp_R r)) = emptyDefUse{getDef=[r]}
+    fromDef (X64Op_M (Address base index _ _)) =
       emptyDefUse{getUse=[base] ++ justToList index}
     fromDef _ = emptyDefUse
-    fromUse :: Operand -> DefUse
-    fromUse (Op_I (RegOp r)) = emptyDefUse{getUse=[r]}
-    fromUse (Op_M (Address base index _ _)) =
+    fromUse :: X64Op -> DefUse
+    fromUse (X64Op_I (IROp_R r)) = emptyDefUse{getUse=[r]}
+    fromUse (X64Op_M (Address base index _ _)) =
       emptyDefUse{getUse=[base] ++ justToList index}
     fromUse _ = emptyDefUse
 
-    isReg :: Operand -> Bool
-    isReg (Op_I (RegOp _)) = True
+    isReg :: X64Op -> Bool
+    isReg (X64Op_I (IROp_R _)) = True
     isReg _ = False
 
-    unReg :: Operand -> Reg
-    unReg (Op_I (RegOp r)) = r
+    unReg :: X64Op -> Reg
+    unReg (X64Op_I (IROp_R r)) = r
 
     justToList (Just a) = [a]
     justToList Nothing = []

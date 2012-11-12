@@ -2,9 +2,9 @@ module Backend.IR.Tree (
   Tree(..)
 ) where
 
-import Backend.IR.Oprnd
+import Backend.IR.IROp
 
-data Tree = Leaf Oprnd
+data Tree = Leaf IROp
           | Seq Tree Tree
           | Add Tree Tree
           | Move Tree Tree
