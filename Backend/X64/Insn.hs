@@ -9,7 +9,10 @@ module Backend.X64.Insn (
   rax, rcx, rdx, rbx, rsp, rbp, rsi, rdi,
   r8, r9, r10, r11, r12, r13, r14, r15,
   replaceVReg,
-  isBranchInsn
+  isBranchInsn,
+  isBranchTarget,
+  getBranchTarget,
+  mightFallThrough
 ) where
 
 import Data.List (intercalate)
@@ -74,11 +77,14 @@ showCond Lt = "l"
 showCond Eq = "e"
 showCond Ne = "ne"
 
-data Label = Label String
-  deriving (Show, Eq)
+data Label = StringLabel String
+           | IntLabel Int
+  deriving (Show, Eq, Ord)
 
 unLabel :: Label -> String
-unLabel (Label label) = label
+unLabel lbl = case lbl of
+  (StringLabel s) -> s
+  (IntLabel i) -> ".L" ++ show i
 
 showLabel :: Label -> String
 showLabel = (++":") . unLabel
@@ -150,9 +156,27 @@ replaceOp f op = case op of
 isBranchInsn :: Insn -> Bool
 isBranchInsn insn = case insn of
   (Call _) -> True
-  (Cmp _ _) -> True
   (J _ _) -> True
   (Jmp _) -> True
   Ret -> True
   _ -> False
+
+isBranchTarget :: Insn -> Bool
+isBranchTarget insn = case insn of
+  (BindLabel _) -> True
+  _ -> False
+
+getBranchTarget :: Insn -> Maybe Label
+getBranchTarget insn = case insn of
+  (J _ label) -> Just label
+  (Jmp label) -> Just label
+  _ -> Nothing
+
+mightFallThrough :: Insn -> Bool
+mightFallThrough insn = case insn of
+  (Jmp _) -> False
+  Ret -> False
+  _ -> True
+  -- what about Call? Welp, let's ignore it for now.
+
 

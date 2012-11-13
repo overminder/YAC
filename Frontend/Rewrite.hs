@@ -9,7 +9,17 @@ import qualified Data.Map as Map
 import Frontend.ObjModel
 import Backend.IR.Temp
 
-data RewriteState 
+data RewriteState = RewriteState {
+  rsVars :: [(String, Int)],
+  rsInits :: [(String, Cell)], -- name, form
+  rsFuncs :: [(String, Cell, Cell)] -- name, formals, body
+}
+
+empty = RewriteState {
+  rsVars = [],
+  rsInits = [],
+  rsFuncs = []
+}
 
 type RewriteGen = StateT RewriteState TempGen
 

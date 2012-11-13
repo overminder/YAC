@@ -48,41 +48,56 @@ gen' (List c) = do
   return $ T.Return t
 
 genWith :: Cell -> IRGen Tree
-genWith (Fixnum i) = return $ T.Leaf $ IROp_I i
-genWith (Symbol name) = do
-  maybeReg <- lookupSymbol name
-  case maybeReg of
-    Just reg -> return $ T.Leaf $ IROp_R reg
-    Nothing -> error ("Refering to an unbound variable: " ++ name)
-genWith p@(List xs) = case xs of
-  [] -> error "Unexpected nil in source code: ()"
-  _ -> genWithList xs
+genWith c = case c of
+  (Fixnum i) -> return $ T.Leaf $ IROp_I i
+  (Symbol name) -> do
+    maybeReg <- lookupSymbol name
+    case maybeReg of
+      Just reg -> return $ T.Leaf $ IROp_R reg
+      Nothing -> error ("Refering to an unbound variable: " ++ name)
+  (List xs) -> case xs of
+    [] -> error "Unexpected nil in source code: ()"
+    _ -> genWithList xs
 
 genWithList :: [Cell] -> IRGen Tree
-genWithList ((Symbol "+"):xs) = case xs of
-  [] -> return $ T.Leaf (IROp_I 0)
-  [x] -> genWith x
-  _ -> do
-    (t0:t1:ts) <- mapM genWith xs
-    return $ foldl T.Add (T.Add t0 t1) ts
+genWithList c = case c of
+  -- (+ ...)
+  ((Symbol "+"):xs) -> case xs of
+    [] -> return $ T.Leaf (IROp_I 0)
+    [x] -> genWith x
+    _ -> do
+      (t0:t1:ts) <- mapM genWith xs
+      return $ foldl T.Add (T.Add t0 t1) ts
 
-genWithList lst@[Symbol "define", Symbol name, expr] = do
-  maybeReg <- lookupSymbol name
-  case maybeReg of
-    Just reg -> error ("Redefining variable at #define: "
-                       ++ (show $ List lst))
-    Nothing -> do
-      exprTree <- genWith expr
-      reg <- memorizeSymbol name
-      return $ T.Move (T.Leaf $ IROp_R reg) exprTree
-genWithList lst@[Symbol "set!", Symbol name, expr] = do
-  maybeReg <- lookupSymbol name
-  case maybeReg of
-    Just reg -> do
-      exprTree <- genWith expr
-      return $ T.Move (T.Leaf $ IROp_R reg) exprTree
-    Nothing -> error ("Unbound variable at #set!: " ++ (show $ List lst))
-genWithList ((Symbol "begin"):xs) = do
-  trees <- mapM genWith xs
-  return $ T.fromList trees
-genWithList xs@_ = error $ "Unexpected form: " ++ show (List xs)
+  -- (define name expr)
+  lst@[Symbol "define", Symbol name, expr] -> do
+    maybeReg <- lookupSymbol name
+    case maybeReg of
+      Just reg -> error ("Redefining variable at #define: "
+                         ++ (show $ List lst))
+      Nothing -> do
+        exprTree <- genWith expr
+        reg <- memorizeSymbol name
+        return $ T.Move (T.Leaf $ IROp_R reg) exprTree
+
+  [Symbol "if", pred, thenExpr, elseExpr] -> do
+    [predTree, thenTree, elseTree] <- mapM genWith [pred, thenExpr, elseExpr]
+    return $ T.If predTree thenTree elseTree
+
+  -- (set! name expr)
+  lst@[Symbol "set!", Symbol name, expr] -> do
+    maybeReg <- lookupSymbol name
+    case maybeReg of
+      Just reg -> do
+        exprTree <- genWith expr
+        return $ T.Move (T.Leaf $ IROp_R reg) exprTree
+      Nothing -> error ("Unbound variable at #set!: " ++ (show $ List lst))
+
+  -- (begin ...)
+  ((Symbol "begin"):xs) -> do
+    trees <- mapM genWith xs
+    return $ T.fromList trees
+
+  -- otherwise
+  xs@_ -> error $ "Unexpected form: " ++ show (List xs)
+
