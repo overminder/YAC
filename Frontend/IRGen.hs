@@ -10,7 +10,8 @@ import qualified Data.Map as Map
 import Frontend.ObjModel
 import Backend.IR.IROp
 import Backend.IR.Temp
-import Backend.IR.Tree
+import Backend.IR.Tree (Tree)
+import qualified Backend.IR.Tree as T
 
 type SymTab = Map String Reg
 type IRGen = StateT SymTab TempGen
@@ -42,45 +43,46 @@ gen :: Cell -> TempGen Tree
 gen c = evalStateT (gen' c) Map.empty
 
 gen' :: Cell -> IRGen Tree
-gen' c = genWith (Pair (Symbol "begin") c)
+gen' (List c) = do
+  t <- genWith $ List (Symbol "begin":c)
+  return $ T.Return t
 
 genWith :: Cell -> IRGen Tree
-genWith (Fixnum i) = return $ Leaf $ IROp_I i
+genWith (Fixnum i) = return $ T.Leaf $ IROp_I i
 genWith (Symbol name) = do
   maybeReg <- lookupSymbol name
   case maybeReg of
-    Just reg -> return $ Leaf $ IROp_R reg
+    Just reg -> return $ T.Leaf $ IROp_R reg
     Nothing -> error ("Refering to an unbound variable: " ++ name)
-genWith p@(Pair _ _) = case pairToList p of
-  (lst, Nil) -> genWithList lst
-  otherwise -> error ("Not a proper list to evaluate: " ++ show p)
-genWith Nil = error "Unexpected nil in source code: ()"
+genWith p@(List xs) = case xs of
+  [] -> error "Unexpected nil in source code: ()"
+  _ -> genWithList xs
 
 genWithList :: [Cell] -> IRGen Tree
 genWithList ((Symbol "+"):xs) = case xs of
-  [] -> return $ Leaf (IROp_I 0)
+  [] -> return $ T.Leaf (IROp_I 0)
   [x] -> genWith x
   _ -> do
     (t0:t1:ts) <- mapM genWith xs
-    return $ foldl Add (Add t0 t1) ts
+    return $ foldl T.Add (T.Add t0 t1) ts
 
 genWithList lst@[Symbol "define", Symbol name, expr] = do
   maybeReg <- lookupSymbol name
   case maybeReg of
     Just reg -> error ("Redefining variable at #define: "
-                       ++ (show $ listToCell lst))
+                       ++ (show $ List lst))
     Nothing -> do
       exprTree <- genWith expr
       reg <- memorizeSymbol name
-      return $ Move (Leaf $ IROp_R reg) exprTree
+      return $ T.Move (T.Leaf $ IROp_R reg) exprTree
 genWithList lst@[Symbol "set!", Symbol name, expr] = do
   maybeReg <- lookupSymbol name
   case maybeReg of
     Just reg -> do
       exprTree <- genWith expr
-      return $ Move (Leaf $ IROp_R reg) exprTree
-    Nothing -> error ("Unbound variable at #set!: " ++ (show $ listToCell lst))
+      return $ T.Move (T.Leaf $ IROp_R reg) exprTree
+    Nothing -> error ("Unbound variable at #set!: " ++ (show $ List lst))
 genWithList ((Symbol "begin"):xs) = do
   trees <- mapM genWith xs
-  return $ foldr Seq Nop trees
-
+  return $ T.fromList trees
+genWithList xs@_ = error $ "Unexpected form: " ++ show (List xs)

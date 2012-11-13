@@ -15,13 +15,6 @@ import Backend.IR.Temp
 import Backend.X64.Insn
 import Backend.X64.DataFlow
 
--- X64 reg spec
-allRegs = map MReg ["rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi",
-    "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15"]
-
-[rax, rcx, rdx, rbx, rsp, rbp, rsi, rdi, r8, r9, r10, r11, r12, r13, r14, r15]
-  = allRegs
-
 scratchRegs = [r13, r14, r15]
 
 usableRegs = filter (\x -> notElem x scratchRegs) [rax, rbx, rcx, rdx, rdi,
@@ -134,11 +127,16 @@ materialize insn = do
   regMap <- liftM regUses get
   let du = getDefUse insn
   if any (flip Map.notMember regMap) (getUse du ++ getDef du)
-    then return []
+    then return [] {- Test if any of the defined (but not used later)
+                      or used (though IMPOSSIBLE) VReg is present
+                      in this insn. If so, then this insn is doing
+                      nothing and should be removed (DCE).
+
+                      XXX: actually this opt does not belong to here.. -}
     else do
       let getItem r = case Map.lookup r regMap of
             (Just result) -> result
-            Nothing -> error $ "Cannot find " ++ show r
+            Nothing -> error $ "Cannot find " ++ show r -- Shall never happen
           loadRegs = filter (isInStack . getItem) (getUse du)
           storeRegs = filter (isInStack . getItem) (getDef du)
           totalRegs = loadRegs `List.union` storeRegs
@@ -163,9 +161,9 @@ materialize insn = do
               (Just mRegInfo) -> chooseTemp mRegInfo
               Nothing -> case Map.lookup vReg regMap of
                 (Just (InReg mReg)) -> mReg
-                _ -> error "RegAlloc.meterialize: Internal Error"
+                _ -> error "RegAlloc.materialize: Internal Error"
       
-      mapM (freeTempReg . chooseTemp) (Map.elems tempMap) -- give back
+      restoreTempRegs
       return $ loads ++ [replaceVReg mRegForVReg insn] ++ stores
 
 expireOldIntervals :: Interval -> AllocGen ()
@@ -227,6 +225,12 @@ allocTempReg = do
   }
   return r
 
+restoreTempRegs :: AllocGen ()
+restoreTempRegs = do
+  modify $ \st -> st {
+    tempRegs = scratchRegs
+  }
+
 freeTempReg :: Reg -> AllocGen ()
 freeTempReg r = do
   trs <- liftM freeRegs get
@@ -254,9 +258,9 @@ getLiveRange :: [Liveness] -> LiveMap
 getLiveRange lvs = foldl addInterval Map.empty (zip [0..] lvs)
   where
     addInterval :: LiveMap -> (Int, Liveness) -> LiveMap
-    addInterval lvMap (idx, (Liveness regs)) = newLvMap
+    addInterval lvMap (idx, Liveness lvIn lvOut) = newLvMap
       where
-        newLvMap = foldr combine lvMap regs
+        newLvMap = foldr combine lvMap lvOut
         combine reg lvMap = case Map.lookup reg lvMap of
           (Just (frm, to)) -> Map.insert reg (frm, idx) lvMap
           Nothing -> Map.insert reg (idx, idx) lvMap

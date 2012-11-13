@@ -11,5 +11,5 @@
 (define k 11)
 (define l 12)
 (define m 13)
-(set! a (+ a b c d e f g h i j k l m))
-a
+(define n (+ m l k j i h g f e d c b a))
+n

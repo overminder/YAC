@@ -1,6 +1,8 @@
 module Backend.IR.IROp (
   Reg(..),
   IROp(..),
+  isMReg,
+  isVReg,
   getReg,
   getImm
 ) where
@@ -20,6 +22,14 @@ data IROp = IROp_R Reg
 instance Show IROp where
   show (IROp_R r) = show r
   show (IROp_I i) = "$" ++ show i
+
+isMReg :: Reg -> Bool
+isMReg (MReg _) = True
+isMReg _ = False
+
+isVReg :: Reg -> Bool
+isVReg (VReg _) = True
+isVReg _ = False
 
 getReg :: IROp -> Reg
 getReg (IROp_R r) = r

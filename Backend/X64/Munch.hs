@@ -127,14 +127,21 @@ munchTree (T.Deref t) = do
       return (Just tempReg)
 
 munchTree (T.Seq t0 t1) = do
-  munchTree t0
-  munchTree t1
-  return Nothing
+  r0 <- munchTree t0
+  case t1 of
+    T.Nop -> return r0
+    _ -> munchTree t1
 
 munchTree (T.Leaf op) = do
   return $ Just $ X64Op_I op
 
-munchTree T.Nop = return Nothing
+munchTree (T.Return t) = do
+  munchTree (T.Move (T.Leaf (IROp_R rax)) t)
+  emitInsn Ret
+  return Nothing
+
+munchTree T.Nop = error "not reached"
+
 
 -- Helpers
 isInt32 :: Int -> Bool

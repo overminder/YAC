@@ -5,11 +5,22 @@ module Backend.X64.Insn (
   Cond(..),
   Label(..),
   Insn(..),
+  allRegs,
+  rax, rcx, rdx, rbx, rsp, rbp, rsi, rdi,
+  r8, r9, r10, r11, r12, r13, r14, r15,
   replaceVReg,
+  isBranchInsn
 ) where
 
 import Data.List (intercalate)
 import Backend.IR.IROp
+
+-- X64 reg spec
+allRegs = map MReg ["rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi",
+    "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15"]
+
+[rax, rcx, rdx, rbx, rsp, rbp, rsi, rdi, r8, r9, r10, r11, r12, r13, r14, r15]
+  = allRegs
 
 data Scale = Scale1 | Scale2 | Scale4 | Scale8
   deriving (Eq, Ord)
@@ -90,45 +101,58 @@ formatInsn :: String -> [String] -> String
 formatInsn insn ops = insn ++ " " ++ intercalate ", " ops
 
 instance Show Insn where
-  show (Add dest src) = formatInsn "add" [show dest, show src]
-  show (Sub dest src) = formatInsn "sub" [show dest, show src]
-  show (Call label) = formatInsn "call" [showLabel label]
-  show (Cmp lhs rhs) = formatInsn "cmp" [show lhs, show rhs]
-  show (J cond label) = formatInsn ("j" ++ showCond cond) [unLabel label]
-  show (Jmp label) = formatInsn "jmp" [unLabel label]
-  show (Lea dest src) = formatInsn "lea" [show dest, show src]
-  show (Mov dest src) = formatInsn "mov" [show dest, show src]
-  show (Push src) = formatInsn "push" [show src]
-  show (Pop dest) = formatInsn "pop" [show dest]
-  show Ret = "ret"
-  show (BindLabel label) = showLabel label
+  show insn = case insn of
+    (Add dest src) -> formatInsn "add" [show dest, show src]
+    (Sub dest src) -> formatInsn "sub" [show dest, show src]
+    (Call label) -> formatInsn "call" [showLabel label]
+    (Cmp lhs rhs) -> formatInsn "cmp" [show lhs, show rhs]
+    (J cond label) -> formatInsn ("j" ++ showCond cond) [unLabel label]
+    (Jmp label) -> formatInsn "jmp" [unLabel label]
+    (Lea dest src) -> formatInsn "lea" [show dest, show src]
+    (Mov dest src) -> formatInsn "mov" [show dest, show src]
+    (Push src) -> formatInsn "push" [show src]
+    (Pop dest) -> formatInsn "pop" [show dest]
+    Ret -> "ret"
+    (BindLabel label) -> showLabel label
 
 replaceVReg :: (Reg -> Reg) -> Insn -> Insn
 replaceVReg f insn = setOpsOfInsn (map (replaceOp f) (opsOfInsn insn)) insn
 
 opsOfInsn :: Insn -> [X64Op]
-opsOfInsn (Add op0 op1) = [op0, op1]
-opsOfInsn (Sub op0 op1) = [op0, op1]
-opsOfInsn (Cmp op0 op1) = [op0, op1]
-opsOfInsn (Lea op0 op1) = [op0, op1]
-opsOfInsn (Mov op0 op1) = [op0, op1]
-opsOfInsn (Push op0)    = [op0]
-opsOfInsn (Pop op0)     = [op0]
-opsOfInsn _             = []
+opsOfInsn insn = case insn of
+  (Add op0 op1) -> [op0, op1]
+  (Sub op0 op1) -> [op0, op1]
+  (Cmp op0 op1) -> [op0, op1]
+  (Lea op0 op1) -> [op0, op1]
+  (Mov op0 op1) -> [op0, op1]
+  (Push op0)    -> [op0]
+  (Pop op0)     -> [op0]
+  _             -> []
 
 setOpsOfInsn :: [X64Op] -> Insn -> Insn
-setOpsOfInsn [op0, op1] (Add _ _) = Add op0 op1
-setOpsOfInsn [op0, op1] (Sub _ _) = Sub op0 op1
-setOpsOfInsn [op0, op1] (Cmp _ _) = Cmp op0 op1
-setOpsOfInsn [op0, op1] (Lea _ _) = Lea op0 op1
-setOpsOfInsn [op0, op1] (Mov _ _) = Mov op0 op1
-setOpsOfInsn [op0]      (Push _)  = Push op0
-setOpsOfInsn [op0]      (Pop _)   = Pop op0
-setOpsOfInsn []         insn@_    = insn
+setOpsOfInsn ops insn = case (ops, insn) of
+  ([op0, op1], (Add _ _)) -> Add op0 op1
+  ([op0, op1], (Sub _ _)) -> Sub op0 op1
+  ([op0, op1], (Cmp _ _)) -> Cmp op0 op1
+  ([op0, op1], (Lea _ _)) -> Lea op0 op1
+  ([op0, op1], (Mov _ _)) -> Mov op0 op1
+  ([op0]     , (Push _) ) -> Push op0
+  ([op0]     , (Pop _)  ) -> Pop op0
+  ([]        , insn@_   ) -> insn
 
 replaceOp :: (Reg -> Reg) -> X64Op -> X64Op
-replaceOp f (X64Op_I (IROp_R vReg@(VReg _))) = X64Op_I (IROp_R $ f vReg)
-replaceOp f (X64Op_M (Address r0 maybeR1 scale imm))
-  = X64Op_M (Address (f r0) (fmap f maybeR1) scale imm)
-replaceOp f op@_ = op
+replaceOp f op = case op of
+  (X64Op_I (IROp_R vReg@(VReg _))) -> X64Op_I (IROp_R $ f vReg)
+  (X64Op_M (Address r0 maybeR1 scale imm))
+    -> X64Op_M (Address (f r0) (fmap f maybeR1) scale imm)
+  op@_ -> op
+
+isBranchInsn :: Insn -> Bool
+isBranchInsn insn = case insn of
+  (Call _) -> True
+  (Cmp _ _) -> True
+  (J _ _) -> True
+  (Jmp _) -> True
+  Ret -> True
+  _ -> False
 

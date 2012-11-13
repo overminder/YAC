@@ -36,11 +36,13 @@ getDefUse (Lea dest src) = makeDefUse [dest] [src]
 getDefUse (Mov dest src) = makeDefUse [dest] [src]
 getDefUse (Push src) = makeDefUse [] [src]
 getDefUse (Pop dest) = makeDefUse [dest] []
+--getDefUse Ret = makeDefUse [] [X64Op_I $ IROp_R rax] -- Hackish?
 getDefUse _ = emptyDefUse
 
 makeDefUse :: [X64Op] -> [X64Op] -> DefUse
-makeDefUse defs uses = mergeDefUse du0 du1
+makeDefUse defs uses = excludeMReg $ mergeDefUse du0 du1
   where
+    excludeMReg (DefUse xs ys) = DefUse (filter isVReg xs) (filter isVReg ys)
     du0 = foldr (mergeDefUse . fromDef) emptyDefUse defs
     du1 = foldr (mergeDefUse . fromUse) emptyDefUse uses
 
@@ -65,27 +67,26 @@ makeDefUse defs uses = mergeDefUse du0 du1
     justToList (Just a) = [a]
     justToList Nothing = []
 
--- actually it's the live var when entering the insn
+-- two sets of registers
 data Liveness = Liveness {
-  getLiveVars :: [Reg]
+  liveIn :: [Reg],
+  liveOut :: [Reg]
 }
 instance Show Liveness where
-  show lv = "live=" ++ show (getLiveVars lv)
+  show lv = "liveIn=" ++ show (liveIn lv) ++ ",liveOut=" ++ show (liveOut lv)
 
-emptyLiveness = Liveness []
+emptyLiveness = Liveness [] []
 
 {- Backward analysis
+   thisLv.liveIn = du.use `union` (thisLv.liveOut - du.def)
+   thisLv.liveOut = nextLv.liveIn
 
    thisLv <- emptyLv
-   for any given v in du.def, du.use and nextLv
-     if v in du.use
-       thisLv.add v
-     else
-       if v in nextLv
-         if v in du.def
-           pass
-         else
-           thisLv.add v -- pass throu
+   forM du.use \v -> thisLv.liveIn.add v
+   forM nextLv.liveIn \v -> thisLv.liveOut.add v
+   forM thisLv.liveOut \v -> do 
+     guard (v `notElem` du.def)
+     thisLve.liveIn.add v
  -}
 getLiveness :: [DefUse] -> [Liveness]
 getLiveness = List.init . (foldr combine [emptyLiveness])
@@ -93,13 +94,9 @@ getLiveness = List.init . (foldr combine [emptyLiveness])
     combine :: DefUse -> [Liveness] -> [Liveness]
     combine du nextLvs@(nextLv:_) = (getLiveness' du nextLv):nextLvs
     getLiveness' :: DefUse -> Liveness -> Liveness
-    getLiveness' du nextLv = 
-      Liveness $ List.union (foldr checkDef [] (getLiveVars nextLv)) (getUse du)
+    getLiveness' du nextLv = Liveness liveIn' liveOut'
       where
-        checkDef :: Reg -> [Reg] -> [Reg]
-        checkDef x =
-          if x `elem` (getDef du)
-            then id
-            else (x:)
+        liveIn' = (getUse du) `List.union` (liveOut' List.\\ (getDef du))
+        liveOut' = liveIn nextLv
 
 

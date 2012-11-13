@@ -15,8 +15,8 @@ spaces = skipMany1 space
 
 readProg :: String -> Cell
 readProg input = case parse parseProg "Scheme" input of
-  Left err -> listToCell [Symbol "parse-error", Symbol $ show err]
-  Right val -> listToCell [Symbol "parse-success", val]
+  Left err -> List [Symbol "parse-error", Symbol $ show err]
+  Right val -> List [Symbol "parse-success", val]
 
 parseAtom :: Parser Cell
 parseAtom = do
@@ -39,7 +39,7 @@ parsePair = do
   return p
 
 parseList :: Parser Cell
-parseList = liftM listToCell $ sepBy parseCell spaces
+parseList = liftM List $ sepBy parseCell spaces
 
 parseDottedPair :: Parser Cell
 parseDottedPair = do
@@ -48,13 +48,13 @@ parseDottedPair = do
     char '.'
     spaces
     parseCell
-  return $ dottedListToCell cars cdr
+  return $ DottedList cars cdr
 
 parseQuoted :: Parser Cell
 parseQuoted = do
   char '\''
   c <- parseCell
-  return $ listToCell [Symbol "quote", c]
+  return $ List [Symbol "quote", c]
 
 parseCell :: Parser Cell
 parseCell = parseAtom
@@ -65,5 +65,5 @@ parseCell = parseAtom
 parseProg :: Parser Cell
 parseProg = do
   cs <- endBy parseCell (many space)
-  return $ listToCell cs
+  return $ List cs
 
