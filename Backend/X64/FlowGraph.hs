@@ -6,66 +6,88 @@ module Backend.X64.FlowGraph (
   addSucc,
   addPred,
   addBlock,
-  getBlock
+  getBlock,
+  setBlock,
+  topologicallySortedBlockIds,
+  toTrace
 ) where
 
+import qualified Data.List as List
 import Data.Map (Map)
 import qualified Data.Map as Map
 
 import Backend.X64.BasicBlock (BasicBlock)
 import qualified Backend.X64.BasicBlock as BB
 
-data FlowGraph = FlowGraph {
-  fgEntry :: BB.Id,
-  fgBlocks :: Map BB.Id BasicBlock,
-  fgPreds :: Map BB.Id [BB.Id],
-  fgSuccs :: Map BB.Id [BB.Id]
+data FlowGraph a = FlowGraph {
+  entry :: BB.Id,
+  blocks :: Map BB.Id (BasicBlock a),
+  preds :: Map BB.Id [BB.Id],
+  succs :: Map BB.Id [BB.Id]
 }
-  deriving (Show)
+  deriving (Show, Eq)
+
+instance Functor FlowGraph where
+  fmap f g = g {
+    blocks = Map.map (fmap f) (blocks g)
+  }
 
 empty = FlowGraph {
-  fgEntry = (-1),
-  fgBlocks = Map.empty,
-  fgPreds = Map.empty,
-  fgSuccs = Map.empty
+  entry = (-1),
+  blocks = Map.empty,
+  preds = Map.empty,
+  succs = Map.empty
 }
 
-setEntry :: BB.Id -> FlowGraph -> FlowGraph
+setEntry :: BB.Id -> FlowGraph a -> FlowGraph a
 setEntry bid fg = fg {
-  fgEntry = bid
+  entry = bid
 }
 
-connect :: BB.Id -> BB.Id -> FlowGraph -> FlowGraph
+connect :: BB.Id -> BB.Id -> FlowGraph a -> FlowGraph a
 connect f t g =
   addSucc f t (addPred f t g)
 
-addSucc :: BB.Id -> BB.Id -> FlowGraph -> FlowGraph
+addSucc :: BB.Id -> BB.Id -> FlowGraph a -> FlowGraph a
 addSucc f t g = newG
   where
-    succMap = fgSuccs g
+    succMap = succs g
     newG = g {
-      fgSuccs = Map.alter alter f succMap
+      succs = Map.alter alter f succMap
     }
     alter v = case v of
       (Just xs) -> Just (t:xs)
       Nothing -> Just [t]
 
-addPred :: BB.Id -> BB.Id -> FlowGraph -> FlowGraph
+addPred :: BB.Id -> BB.Id -> FlowGraph a -> FlowGraph a
 addPred f t g = newG
   where
-    predMap = fgPreds g
+    predMap = preds g
     newG = g {
-      fgPreds = Map.alter alter t predMap
+      preds = Map.alter alter t predMap
     }
     alter v = case v of
       (Just xs) -> Just (f:xs)
       Nothing -> Just [f]
 
-addBlock :: BasicBlock -> FlowGraph -> FlowGraph
+addBlock :: BasicBlock a -> FlowGraph a -> FlowGraph a
 addBlock bb g = g {
-  fgBlocks = Map.insert (BB.bId bb) bb (fgBlocks g)
+  blocks = Map.insert (BB.bId bb) bb (blocks g)
 }
 
-getBlock :: BB.Id -> FlowGraph -> BasicBlock
-getBlock bid g = (fgBlocks g) Map.! bid
+setBlock = addBlock
+
+getBlock :: BB.Id -> FlowGraph a -> BasicBlock a
+getBlock bid g = bb
+  where
+    (Just bb) = Map.lookup bid $ blocks g
+
+-- XXX hackish. Maybe it is okay for now...
+topologicallySortedBlockIds :: FlowGraph a -> [BB.Id]
+topologicallySortedBlockIds = List.sort . Map.keys . blocks
+
+toTrace :: FlowGraph a -> [a]
+toTrace g = concatMap BB.toTrace (map (\bid -> getBlock bid g) bids)
+  where
+    bids = topologicallySortedBlockIds g
 

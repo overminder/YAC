@@ -20,47 +20,31 @@ import Frontend.Parser
 --import Frontend.Rewrite
 import qualified Frontend.IRGen as IRGen
 
-prettifyDataFlow :: [Insn] -> String
-prettifyDataFlow insnList = List.intercalate "\n" outputStrList
-  where
-    duList = map getDefUse insnList
-    lvList = getLiveness duList
-    outputStrList = map prettify (List.zip3 insnList duList lvList)
-    prettify (insn,du,lv) = leftAlign (show insn) 30 ++ ";; " ++ 
-      show du ++ "| " ++ show lv
-    leftAlign s howMany =
-      if length s < howMany
-        then leftAlign (s ++ " ") howMany
-        else s
-
-prettifyInsnOnly :: [Insn] -> String
+prettifyInsnOnly :: Show a => [a] -> String
 prettifyInsnOnly insnList = List.intercalate "\n" (map show insnList)
-
-visualize0 :: Cell -> IO ()
-visualize0 prog = do
-  let (tree, insns, regAllocInsns, allocState) = runTempGen $ do 
-        tree <- IRGen.gen prog
-        insns <- munch tree
-        let lvs = getLiveness (map getDefUse insns)
-        (regAllocInsns, allocState) <- runAlloc insns lvs
-        return (tree, insns, regAllocInsns, allocState)
-  putStrLn $ "\t.ir-tree\n" ++ show tree
-  putStrLn $ "\t.insn\n" ++ prettifyDataFlow insns
-  putStrLn $ "\t.live-range\n" ++ show (
-    getLiveRange (getLiveness (map getDefUse insns)))
-  putStrLn $ "\t.alloc-state\n" ++ show allocState
-  putStrLn $ "\t.regalloc-insn\n" ++ prettifyInsnOnly regAllocInsns
 
 visualize1 :: Cell -> IO ()
 visualize1 prog = do
-  let (tree, insns, builder) = runTempGen $ do 
+  let (tree, insns, graph, graph', niter, insns', raInsn) = runTempGen $ do 
         tree <- IRGen.gen prog
         insns <- munch tree
-        builder <- buildGraph insns
-        return (tree, insns, builder)
+        graph <- buildGraph insns
+        let graph' = fmap mkDefUse graph
+            iterLiveness g n = if g' == g
+              then (g, n)
+              else iterLiveness g' (n+1)
+              where
+                g' = runLiveness g
+        let (graph2, niter) = iterLiveness graph' 0
+            insns' = toTrace graph2
+        raInsn <- alloc insns'
+        return (tree, insns, graph, graph2, niter, insns', raInsn)
   putStrLn $ "\t.ir-tree\n" ++ show tree
   putStrLn $ "\t.insn\n" ++ prettifyInsnOnly insns
-  putStrLn $ "\t.graph-builder\n" ++ show builder
+  putStrLn $ "\t.graph\n" ++ show graph
+  putStrLn $ "\t.graph#" ++ show niter ++ "\n" ++ show graph'
+  putStrLn $ "\t.insn'\n" ++ prettifyInsnOnly insns'
+  putStrLn $ "\t.regalloc-insn\n" ++ prettifyInsnOnly raInsn
 
 main = do
   input <- getContents

@@ -5,18 +5,29 @@ module Backend.X64.BasicBlock (
   hasNoInsn,
   addInsn,
   addLabel,
-  setCtrlInsn
+  setCtrlInsn,
+  getFullInsnList,
+  setFullInsnList,
+  getFirstInsn,
+  toTrace
 ) where
 
-import Backend.X64.Insn
+import qualified Data.List as List
 
-data BasicBlock = BasicBlock {
+data BasicBlock a = BasicBlock {
   bId :: Id,
-  insnList :: [Insn],
-  ctrlInsn :: Maybe Insn,
-  labels :: [Label]
+  insnList :: [a],
+  ctrlInsn :: Maybe a,
+  labels :: [a]
 }
   deriving (Show, Eq)
+
+instance Functor BasicBlock where
+  fmap f bb = bb {
+    insnList = fmap f $ insnList bb,
+    ctrlInsn = fmap f $ ctrlInsn bb,
+    labels = fmap f $ labels bb
+  }
 
 type Id = Int
 
@@ -27,22 +38,45 @@ empty = BasicBlock {
   labels = []
 }
 
-hasNoInsn :: BasicBlock -> Bool
+hasNoInsn :: BasicBlock a -> Bool
 hasNoInsn BasicBlock{insnList = []} = True
 hasNoInsn _ = False
 
-addInsn :: Insn -> BasicBlock -> BasicBlock
+addInsn :: a -> BasicBlock a -> BasicBlock a
 addInsn insn bb = bb {
   insnList = insnList bb ++ [insn]
 }
 
-addLabel :: Label -> BasicBlock -> BasicBlock
+addLabel :: a -> BasicBlock a -> BasicBlock a
 addLabel label bb = bb {
   labels = label:labels bb
 }
 
-setCtrlInsn :: Insn -> BasicBlock -> BasicBlock
+setCtrlInsn :: a -> BasicBlock a -> BasicBlock a
 setCtrlInsn insn bb = bb {
   ctrlInsn = Just insn
 }
+
+getFullInsnList :: BasicBlock a -> [a]
+getFullInsnList bb = case ctrlInsn bb of
+  (Just insn) -> insnList bb ++ [insn]
+  Nothing -> insnList bb
+
+setFullInsnList :: [a] -> BasicBlock a -> BasicBlock a
+setFullInsnList xs bb = case ctrlInsn bb of
+  (Just _) -> bb {
+    insnList = List.init xs,
+    ctrlInsn = Just $ List.last xs
+  }
+  Nothing -> bb {
+    insnList = xs
+  }
+
+getFirstInsn :: BasicBlock a -> a
+getFirstInsn bb = case bb of
+  BasicBlock{insnList=x:xs} -> x
+  _ -> error "BasicBlock.getFirstInsn: this block is empty!"
+
+toTrace :: BasicBlock a -> [a]
+toTrace bb = labels bb ++ getFullInsnList bb
 

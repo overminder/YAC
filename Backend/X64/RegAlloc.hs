@@ -12,8 +12,8 @@ import qualified Data.Map as Map
 
 import Backend.IR.IROp
 import Backend.IR.Temp
-import Backend.X64.Insn
 import Backend.X64.DataFlow
+import Backend.X64.Insn
 
 scratchRegs = [r13, r14, r15]
 
@@ -99,15 +99,25 @@ removeActiveInterval rmVal = do
     activeIntervals = List.sortBy compareInterval (List.delete rmVal actVals)
   }
 
-alloc :: [Insn] -> [Liveness] -> TempGen [Insn]
-alloc insnList lvs = evalStateT (alloc' insnList lvs) emptyAllocState
+alloc :: [DFInsn] -> TempGen [Insn]
+alloc insnList = do
+  (insnList', st) <- runAlloc insnList
+  let size = stackSize st
+      prologue = [
+        Push (X64Op_I (IROp_R rbp)),
+        Mov (X64Op_I (IROp_R rbp)) (X64Op_I (IROp_R rsp))] ++
+        if size /= 0
+          then [Add (X64Op_I (IROp_R rsp)) (X64Op_I (IROp_I size))]
+          else []
+  return $ prologue ++ insnList'
 
-runAlloc :: [Insn] -> [Liveness] -> TempGen ([Insn], AllocState)
-runAlloc insnList lvs = runStateT (alloc' insnList lvs) emptyAllocState
+runAlloc :: [DFInsn] -> TempGen ([Insn], AllocState)
+runAlloc insnList = runStateT (alloc' insnList) emptyAllocState
 
-alloc' :: [Insn] -> [Liveness] -> AllocGen [Insn]
-alloc' insnList lvs = do
+alloc' :: [DFInsn] -> AllocGen [Insn]
+alloc' insnList = do
   let lvMap = getLiveRange lvs
+      lvs = map (\(DFInsn _ _ lv) -> lv) insnList
       sortedLvs = sortedLiveRange lvMap
   forM_ sortedLvs $ \iVal@(iReg, _, _) -> do
     expireOldIntervals iVal
@@ -122,10 +132,9 @@ alloc' insnList lvs = do
 
 -- Replaces virtual registers in insn and adds spilling instructions if needed.
 -- XXX Also does dead-code elimination when possible.
-materialize :: Insn -> AllocGen [Insn]
-materialize insn = do
+materialize :: DFInsn -> AllocGen [Insn]
+materialize (DFInsn insn du lv) = do
   regMap <- liftM regUses get
-  let du = getDefUse insn
   if any (flip Map.notMember regMap) (getUse du ++ getDef du)
     then return [] {- Test if any of the defined (but not used later)
                       or used (though IMPOSSIBLE) VReg is present

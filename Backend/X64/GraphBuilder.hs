@@ -8,10 +8,12 @@ import qualified Data.Map as Map
 
 import Backend.IR.Temp
 import Backend.X64.Insn
-import Backend.X64.BasicBlock (BasicBlock)
 import qualified Backend.X64.BasicBlock as BB
-import Backend.X64.FlowGraph (FlowGraph)
 import qualified Backend.X64.FlowGraph as FG
+
+-- Specialized version for graph building
+type BasicBlock = BB.BasicBlock Insn
+type FlowGraph = FG.FlowGraph Insn
 
 data GraphBuilder = GraphBuilder {
   gbGraph :: FlowGraph,
@@ -46,8 +48,8 @@ setCurrBlockId newId = do
     gbCurrBlock = (gbCurrBlock st) { BB.bId = newId }
   }
 
-buildGraph :: [Insn] -> TempGen GraphBuilder
-buildGraph insnList = execStateT (buildGraph' insnList) emptyGraphBuilder
+buildGraph :: [Insn] -> TempGen FlowGraph
+buildGraph insnList = liftM gbGraph (execStateT (buildGraph' insnList) emptyGraphBuilder)
 
 buildGraph' :: [Insn] -> GraphGen ()
 buildGraph' insnList = do
@@ -148,7 +150,7 @@ addLabelMapping label = do
   bid <- getCurrBlockId
   modify $ \st -> st {
     gbLabelMap = Map.insert label bid (gbLabelMap st),
-    gbCurrBlock = BB.addLabel label (gbCurrBlock st)
+    gbCurrBlock = BB.addLabel (BindLabel label) (gbCurrBlock st)
   }
 
 setEntry :: BB.Id -> GraphGen ()

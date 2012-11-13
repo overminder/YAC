@@ -158,6 +158,9 @@ munchTree t = case t of
 
   (T.Return t) -> do
     munchTree (T.Move (T.Leaf (IROp_R rax)) t)
+    -- epilogue
+    emitInsn (Mov (X64Op_I (IROp_R rsp)) (X64Op_I (IROp_R rbp)))
+    emitInsn (Pop (X64Op_I (IROp_R rbp)))
     emitInsn Ret
     return Nothing
 
