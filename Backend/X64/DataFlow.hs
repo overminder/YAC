@@ -25,6 +25,9 @@ data DFInsn = DFInsn Insn DefUse Liveness
 instance Show DFInsn where
   show (DFInsn i d l) = show i ++ " ;;      " ++ show d ++ " " ++ show l
 
+instance GasSyntax DFInsn where
+  gasShow (DFInsn i _ _) = gasShow i
+
 data DefUse = DefUse {
   getDef :: [Reg],
   getUse :: [Reg]
@@ -72,9 +75,9 @@ mergeDefUse du0 du1 = DefUse {
 }
 
 getDefUse :: [X64Op] -> [X64Op] -> DefUse
-getDefUse defs uses = excludeMReg $ mergeDefUse du0 du1
+getDefUse defs uses = mergeDefUse du0 du1
   where
-    excludeMReg (DefUse xs ys) = DefUse (filter isVReg xs) (filter isVReg ys)
+    --excludeMReg (DefUse xs ys) = DefUse (filter isVReg xs) (filter isVReg ys)
 
     du0 = foldr (mergeDefUse . fromDef) emptyDefUse defs
     du1 = foldr (mergeDefUse . fromUse) emptyDefUse uses

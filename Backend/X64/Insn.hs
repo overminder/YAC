@@ -2,10 +2,10 @@ module Backend.X64.Insn (
   Scale(..),
   Address(..),
   X64Op(..),
-  Cond(..),
   Label(..),
   Insn(..),
   PseudoInsn(..),
+  GasSyntax(..),
   allRegs,
   rax, rcx, rdx, rbx, rsp, rbp, rsi, rdi,
   r8, r9, r10, r11, r12, r13, r14, r15,
@@ -14,11 +14,11 @@ module Backend.X64.Insn (
   isBranchTarget,
   getBranchTarget,
   mightFallThrough,
-  gasShow,
 ) where
 
 import Data.List (intercalate)
 import Backend.IR.IROp
+import Backend.IR.Tree (Cond(..))
 
 -- X64 reg spec
 allRegs = map MReg ["rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi",
@@ -68,9 +68,6 @@ instance Show X64Op where
   show (X64Op_I op) = show op
   show (X64Op_M op) = show op
 
-data Cond = Ge | Gt | Le | Lt | Eq | Ne
-  deriving (Show, Eq)
-
 showCond :: Cond -> String
 showCond Ge = "ge"
 showCond Gt = "g"
@@ -90,6 +87,9 @@ unLabel lbl = case lbl of
 
 showLabel :: Label -> String
 showLabel = (++":") . unLabel
+
+class GasSyntax a where
+  gasShow :: a -> String
 
 data Insn = Add X64Op X64Op
           | Sub X64Op X64Op
@@ -129,21 +129,21 @@ instance Show Insn where
     Ret -> "ret"
     (BindLabel label) -> showLabel label
 
-gasShow :: Insn -> String
-gasShow insn = case insn of
-  (Add dest src) -> formatInsn "add" [show src, show dest]
-  (Sub dest src) -> formatInsn "sub" [show src, show dest]
-  (Call label) -> formatInsn "call" [unLabel label]
-  (Cmp lhs rhs) -> formatInsn "cmp" [show rhs, show lhs]
-  (J cond label) -> formatInsn ("j" ++ showCond cond) [unLabel label]
-  (Jmp label) -> formatInsn "jmp" [unLabel label]
-  (Lea dest src) -> formatInsn "lea" [show src, show dest]
-  (Mov dest src) -> formatInsn "mov" [show src, show dest]
-  (Push src) -> formatInsn "push" [show src]
-  (Pop dest) -> formatInsn "pop" [show dest]
-  Ret -> "ret"
-  (BindLabel label) -> showLabel label
-  _ -> show insn
+instance GasSyntax Insn where
+  gasShow insn = case insn of
+    (Add dest src) -> formatInsn "add" [show src, show dest]
+    (Sub dest src) -> formatInsn "sub" [show src, show dest]
+    (Call label) -> formatInsn "call" [unLabel label]
+    (Cmp lhs rhs) -> formatInsn "cmp" [show rhs, show lhs]
+    (J cond label) -> formatInsn ("j" ++ showCond cond) [unLabel label]
+    (Jmp label) -> formatInsn "jmp" [unLabel label]
+    (Lea dest src) -> formatInsn "lea" [show src, show dest]
+    (Mov dest src) -> formatInsn "mov" [show src, show dest]
+    (Push src) -> formatInsn "push" [show src]
+    (Pop dest) -> formatInsn "pop" [show dest]
+    Ret -> "ret"
+    (BindLabel label) -> showLabel label
+    _ -> show insn
 
 replaceVReg :: (Reg -> Reg) -> Insn -> Insn
 replaceVReg f insn = setOpsOfInsn (map (replaceOp f) (opsOfInsn insn)) insn
@@ -201,6 +201,8 @@ mightFallThrough insn = case insn of
   (Jmp _) -> False
   Ret -> False
   _ -> True
-  -- what about Call? Welp, let's ignore it for now.
+  -- For Call, since control will return to the next insn, and
+  -- args will be stored before it and restored after it,
+  -- we think call acts just like normal insn.
 
 

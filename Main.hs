@@ -38,7 +38,12 @@ visualize1 prog = do
               let (graph', niter) = iterLiveness graph 0
                   flowInsns = toTrace graph'
               allocInsns <- alloc flowInsns
-              insns' <- insertProAndEpilogue allocInsns
+              allocInsns <- insertProAndEpilogue allocInsns
+              -- second graph, to get liveness around call sites
+              graph <- liftM runDefUse $ buildGraph allocInsns
+              let (graph', niter) = iterLiveness graph 0
+                  flowInsns' = toTrace graph'
+              insns' <- insertCallerSave flowInsns'
               formatOutput insns'
             _ -> error $ "Toplevel form not supported: " ++ show d
   mapM_ putStrLn output

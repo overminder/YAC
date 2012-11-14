@@ -1,5 +1,4 @@
 module Backend.X64.RegAlloc (
-  getLiveRange,
   alloc
 ) where
 
@@ -67,7 +66,10 @@ alloc' insnList = do
 materialize :: DFInsn -> AllocGen [Insn]
 materialize (DFInsn insn du lv) = do
   regMap <- lift $ liftM F.vRegUses get
-  if any (flip Map.notMember regMap) (getUse du ++ getDef du)
+  let use' = excludeMReg $ getUse du
+      def' = excludeMReg $ getDef du
+      excludeMReg = filter isVReg
+  if any (flip Map.notMember regMap) (use' ++ def')
     then return [] {- Test if any of the defined (but not used later)
                       or used (though IMPOSSIBLE) VReg is present
                       in this insn. If so, then this insn is doing
@@ -78,8 +80,8 @@ materialize (DFInsn insn du lv) = do
       let getItem r = case Map.lookup r regMap of
             (Just result) -> result
             Nothing -> error $ "Cannot find " ++ show r -- Shall never happen
-          loadRegs = filter (F.isInStack . getItem) (getUse du)
-          storeRegs = filter (F.isInStack . getItem) (getDef du)
+          loadRegs = filter (F.isInStack . getItem) use'
+          storeRegs = filter (F.isInStack . getItem) def'
           totalRegs = loadRegs `List.union` storeRegs
       --
       tempMap <- liftM Map.fromList $ forM totalRegs $ \r -> do
@@ -166,7 +168,10 @@ getLiveRange lvs = foldl addInterval Map.empty (zip [0..] lvs)
     addInterval lvMap (idx, Liveness lvIn lvOut) = newLvMap
       where
         newLvMap = foldr combine lvMap lvOut
-        combine reg lvMap = case Map.lookup reg lvMap of
-          (Just (frm, to)) -> Map.insert reg (frm, idx) lvMap
-          Nothing -> Map.insert reg (idx, idx) lvMap
+        combine reg lvMap = case reg of
+          -- Need to exclude MReg here
+          (MReg _) -> lvMap
+          (VReg _) -> case Map.lookup reg lvMap of
+            (Just (frm, to)) -> Map.insert reg (frm, idx) lvMap
+            Nothing -> Map.insert reg (idx, idx) lvMap
 

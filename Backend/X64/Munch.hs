@@ -73,6 +73,34 @@ munchTree t = case t of
         emitInsn (Lea tempReg (X64Op_M (Address r0 (Just r1) Scale1 0)))
         return $ Just tempReg
 
+  (T.Sub t0 t1) -> do
+    (Just rand0) <- munchTree t0
+    (Just rand1) <- munchTree t1
+    munchSub rand0 rand1
+    where
+      munchSub (X64Op_I (IROp_I i0))
+               (X64Op_I (IROp_I i1)) = do
+        return $ Just $ X64Op_I $ IROp_I $ i0 - i1
+
+      munchSub (X64Op_I r0@(IROp_R _))
+               (X64Op_I (IROp_I i0)) = do
+        -- uses munchAdd
+        munchTree $ T.Add (T.Leaf r0) (T.Leaf (IROp_I (-i0)))
+
+      munchSub i0@(X64Op_I (IROp_I _))
+               r0@(X64Op_I (IROp_R _)) = do
+        tempReg <- newVReg
+        emitInsn $ Mov tempReg i0
+        emitInsn $ Sub tempReg r0
+        return $ Just tempReg
+
+      munchSub r0@(X64Op_I (IROp_R _))
+               r1@(X64Op_I (IROp_R _)) = do
+        tempReg <- newVReg
+        emitInsn $ Mov tempReg r0
+        emitInsn $ Sub tempReg r1
+        return $ Just tempReg
+
   (T.Move (T.Leaf r0@(IROp_R _)) (T.Add t1 t2)) -> do
     (Just rand1) <- munchTree t1
     (Just rand2) <- munchTree t2
@@ -139,10 +167,19 @@ munchTree t = case t of
     retVal@(X64Op_I retValIR) <- newVReg
     elseLabel <- newLabel
     endLabel <- newLabel
-    (Just v0) <- (munchTree t0)
-    r0 <- ensureReg v0
-    emitInsn (Cmp r0 (X64Op_I $ IROp_I 0))
-    emitInsn (J Eq elseLabel)
+    case t0 of
+      (T.Compare lhs rhs cond) -> do
+        (Just vlhs) <- munchTree lhs
+        rlhs <- ensureReg vlhs
+        (Just vrhs) <- munchTree rhs
+        rrhs <- ensureReg vrhs
+        emitInsn $ Cmp rlhs rrhs
+        emitInsn $ J (T.reverseCond cond) elseLabel
+      _ -> do
+        (Just v0) <- munchTree t0
+        r0 <- ensureReg v0
+        emitInsn (Cmp r0 (X64Op_I $ IROp_I 0))
+        emitInsn (J T.Eq elseLabel)
     munchTree (T.Move (T.Leaf retValIR) t1)
     emitInsn (Jmp endLabel)
     emitInsn (BindLabel elseLabel)
@@ -159,14 +196,24 @@ munchTree t = case t of
   (T.Leaf op) -> do
     return $ Just $ X64Op_I op
 
-  -- needs better handling
-  (T.Call (T.Leaf (IROp_L name)) argTrees) -> do
-    forM_ (zip argTrees F.argOps) $ \(t, dest) -> do
-      (Just r) <- munchTree t
+  (T.Call (T.Leaf (IROp_L name)) argTrees tailp) -> do
+    -- Firstly evaluate all args
+    results <- forM argTrees munchTree
+    -- Then put them into the arg pos
+    forM (zip results F.argOps) $ \(Just r, dest) -> do
       r <- ensureReg r
       emitInsn $ Mov dest r
-    emitInsn $ Call (StringLabel name)
-    return $ Just (X64Op_I (IROp_R rax))
+    case tailp of
+      T.NormalCall -> do
+        emitInsn $ Call (StringLabel name)
+        -- Save the result into a non-temp register
+        vReg <- newVReg
+        emitInsn $ Mov vReg (X64Op_I $ IROp_R rax)
+        return $ Just vReg
+      T.TailCall -> error $ "TailCall currently not supported"
+        --emitInsn $ Jmp (StringLabel name)
+        --return Nothing
+        -- return $ Just (X64Op_I $ IROp_R rax) -- Actually not reached
 
   (T.Return t) -> do
     munchTree (T.Move (T.Leaf (IROp_R rax)) t)

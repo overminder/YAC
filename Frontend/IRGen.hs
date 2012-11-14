@@ -33,8 +33,8 @@ empty = IRGenState {
 
 type IRGen = StateT IRGenState TempGen
 
-getNextId :: IRGen Int
-getNextId = lift nextTemp
+newVReg :: IRGen Reg
+newVReg = lift $ liftM VReg nextTemp
 
 putSymTab :: SymTab -> IRGen ()
 putSymTab tab = modify $ \st -> st {
@@ -62,7 +62,7 @@ memorizeSymbol name = do
     Just reg -> return reg
     Nothing -> do
       tab <- getSymTab
-      newReg <- liftM VReg getNextId
+      newReg <- newVReg
       putSymTab $ Map.insert name newReg tab
       return newReg
 
@@ -119,6 +119,21 @@ genWithList c = case c of
       (t0:t1:ts) <- mapM genWith xs
       return $ foldl T.Add (T.Add t0 t1) ts
 
+  ((Symbol "-"):xs) -> case xs of
+    [] -> error $ "empty " ++ show c
+    [x] -> do
+      t <- genWith x
+      return $ T.Sub (T.Leaf $ IROp_I 0) t
+    (x:xs) -> do
+      t <- genWith x
+      ts <- mapM genWith xs
+      return $ foldl T.Sub t ts
+
+  [Symbol "<", lhs, rhs] -> do
+    lhsTree <- genWith lhs
+    rhsTree <- genWith rhs
+    return $ T.Compare lhsTree rhsTree T.Lt
+
   -- (define name expr)
   lst@[Symbol "define", Symbol name, expr] -> do
     maybeReg <- lookupSymbol name
@@ -151,7 +166,12 @@ genWithList c = case c of
   -- (funcall name args)
   (Symbol "funcall":Symbol name:args) -> do
     argTrees <- mapM genWith args
-    return $ T.Call (T.Leaf $ IROp_L name) argTrees
+    return $ T.Call (T.Leaf $ IROp_L name) argTrees T.NormalCall
+
+  -- (funcall/t name args)
+  (Symbol "funcall/t":Symbol name:args) -> do
+    argTrees <- mapM genWith args
+    return $ T.Call (T.Leaf $ IROp_L name) argTrees T.TailCall
 
   -- otherwise
   xs@_ -> error $ "Unexpected form: " ++ show (List xs)

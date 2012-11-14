@@ -27,25 +27,25 @@ with timeit('hs-compile'):
 with open('test.S', 'w') as f:
     f.write(out)
 
-p = Popen(['gcc', 'test.S'])
+p = Popen(['gcc', 'test.S', 'lib.c'])
 p.communicate()
 
 with timeit('native-run'):
-    p = Popen(['./a.out'])
-    p.communicate()
-    print 'nat-result => %s' % p.returncode
+    p = Popen(['./a.out'], stdout=PIPE)
+    out, _ = p.communicate()
+print out.strip()
 
 with timeit('csi-run'):
-    p = Popen(['csi'], stdin=PIPE, stdout=PIPE)
+    p = Popen(['csi', '-q'], stdin=PIPE, stdout=PIPE)
     out, _ = p.communicate('''
+    (define (funcall proc . args)
+      (apply proc args))
+    (define (putInt i)
+      (display i)
+      (newline))
     %s
-    (display "csi-result => ")
-    (display (main))
-    (newline)
+    (main)
     ''' % src)
 
-    for line in out.split('\n'):
-        if line.startswith('csi-result'):
-            print line
-            break
+print out
 

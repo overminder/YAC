@@ -3,6 +3,7 @@ module Backend.X64.Frame (
   FrameGen,
   runFrameGen,
   insertProAndEpilogue,
+  insertCallerSave,
   formatOutput,
 
   nextTemp,
@@ -33,6 +34,7 @@ import qualified Data.Map as Map
 import Backend.IR.IROp
 import qualified Backend.IR.Temp as Temp
 import Backend.X64.Insn
+import Backend.X64.DataFlow
 
 data Frame = Frame {
   name :: String,
@@ -63,11 +65,13 @@ type StackLocGen = Int
 -- Note: none of the scratch regs are callee-saved.
 -- we need at most 3 scratch regs since a x64 insn can at most contain 3 regs
 scratchRegs = [rax, rcx, rdx]
+isScratchReg r = r `elem` scratchRegs
 
 argRegs = [rdi, rsi, rdx, rcx, r8, r9]
 
 calleeSaveRegs = [rbp, rbx, r12, r13, r14, r15]
 isCalleeSave r = r `elem` calleeSaveRegs
+isCallerSave r = not $ isCalleeSave r
 
 usableRegs = useMore ++ useLess
   where
@@ -131,6 +135,8 @@ getStorageType r = do
   let (Just sty) = Map.lookup r regMap
   return sty
 
+--hasStorage :: Reg -> FrameGen StorageType
+
 setFuncName :: String -> FrameGen ()
 setFuncName s = modify $ \st -> st {
   name = s
@@ -191,13 +197,28 @@ insertProAndEpilogue insnList = do
       (PInsn InsertEpilogue) -> do
         mRegs <- liftM mRegUses get
         let restoreInsns = map (Pop . X64Op_I . IROp_R)
-                               (reverse (filter isCalleeSave mRegs))
+                               (reverse $ filter isCalleeSave mRegs)
             leaveInsns = [Mov (X64Op_I (IROp_R rsp)) (X64Op_I (IROp_R rbp)),
                           Pop (X64Op_I (IROp_R rbp))]
         return $ restoreInsns ++ leaveInsns
       _ -> return [insn]
 
-formatOutput :: [Insn] -> FrameGen String
+-- TODO: improve the algorithm
+insertCallerSave :: [DFInsn] -> FrameGen [Insn]
+insertCallerSave insnList = do
+  liftM concat $ forM insnList $ \(DFInsn insn _ (Liveness lvIn _)) -> do
+    case insn of
+      (Call _) -> do
+        let callerSaves = filter
+              (\x -> isCallerSave x && (not $ isScratchReg x)) lvIn
+        --forM callerSaves $ \r -> do
+        --  case
+            saveInsns = map (Push . X64Op_I . IROp_R) callerSaves
+            restoreInsns = map (Pop . X64Op_I . IROp_R) (reverse callerSaves)
+        return $ saveInsns ++ [insn] ++ restoreInsns
+      _ -> return [insn]
+
+formatOutput :: GasSyntax a => [a] -> FrameGen String
 formatOutput insnList =
   let writeLn s = tell s >> tell "\n"
    in execWriterT $ do

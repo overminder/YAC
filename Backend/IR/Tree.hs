@@ -1,5 +1,8 @@
 module Backend.IR.Tree (
   Tree(..),
+  CallType(..),
+  Cond(..),
+  reverseCond,
   fromList,
   toList
 ) where
@@ -8,16 +11,33 @@ import qualified Data.List as List
 
 import Backend.IR.IROp
 
+data CallType = NormalCall | TailCall
+  deriving (Show, Eq)
+
 data Tree = Leaf IROp
           | Seq Tree Tree
           | Add Tree Tree
+          | Sub Tree Tree
           | Move Tree Tree
           | Deref Tree
           | If Tree Tree Tree
-          | Call Tree [Tree]
+          | Compare Tree Tree Cond
+          | Call Tree [Tree] CallType -- func arg tailp
           | Return Tree
           | Nop
   deriving (Eq)
+
+data Cond = Ge | Gt | Le | Lt | Eq | Ne
+  deriving (Show, Eq)
+
+reverseCond :: Cond -> Cond
+reverseCond c = case c of
+  Ge -> Lt
+  Gt -> Le
+  Lt -> Ge
+  Le -> Gt
+  Eq -> Ne
+  Ne -> Eq
 
 instance Show Tree where
   show (Leaf op) = show op
@@ -25,12 +45,13 @@ instance Show Tree where
     Nop -> []
     _ -> "\n" ++ show t1
   show (Add t0 t1) = show t0 ++ " + " ++ show t1
+  show (Sub t0 t1) = show t0 ++ " - (" ++ show t1 ++ ")"
   show (Move t0 t1) = show t0 ++ " := " ++ show t1
   show (Deref t) = "*(" ++ show t ++ ")"
   show (If t0 t1 t2) = "[if "  ++ show t0 ++ " then " ++
     show t1 ++ " else " ++ show t2 ++ "]"
-  show (Call t ts)
-    = show t ++ ".call(" ++ List.intercalate "," (map show ts) ++ ")"
+  show (Call t ts tailp)
+    = show t ++ "." ++ show tailp ++ "(" ++ List.intercalate "," (map show ts) ++ ")"
   show (Return t) = "[return " ++ show t ++ "]"
   show Nop = error "show Nop: empty program body?"
 
