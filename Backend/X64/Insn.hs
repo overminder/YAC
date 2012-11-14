@@ -5,7 +5,7 @@ module Backend.X64.Insn (
   Cond(..),
   Label(..),
   Insn(..),
-  wordSize,
+  PseudoInsn(..),
   allRegs,
   rax, rcx, rdx, rbx, rsp, rbp, rsi, rdi,
   r8, r9, r10, r11, r12, r13, r14, r15,
@@ -19,9 +19,6 @@ module Backend.X64.Insn (
 
 import Data.List (intercalate)
 import Backend.IR.IROp
-
-wordSize :: Int
-wordSize = 8
 
 -- X64 reg spec
 allRegs = map MReg ["rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi",
@@ -105,8 +102,13 @@ data Insn = Add X64Op X64Op
           | Push X64Op
           | Pop X64Op
           | Ret
+          | PInsn PseudoInsn
           | BindLabel Label
   deriving (Eq)
+
+data PseudoInsn = InsertPrologue
+                | InsertEpilogue
+  deriving (Show, Eq)
 
 formatInsn :: String -> [String] -> String
 formatInsn insn ops = insn ++ " " ++ intercalate ", " ops
@@ -123,6 +125,7 @@ instance Show Insn where
     (Mov dest src) -> formatInsn "mov" [show dest, show src]
     (Push src) -> formatInsn "push" [show src]
     (Pop dest) -> formatInsn "pop" [show dest]
+    (PInsn p) -> formatInsn (show p) []
     Ret -> "ret"
     (BindLabel label) -> showLabel label
 
@@ -140,6 +143,7 @@ gasShow insn = case insn of
   (Pop dest) -> formatInsn "pop" [show dest]
   Ret -> "ret"
   (BindLabel label) -> showLabel label
+  _ -> show insn
 
 replaceVReg :: (Reg -> Reg) -> Insn -> Insn
 replaceVReg f insn = setOpsOfInsn (map (replaceOp f) (opsOfInsn insn)) insn

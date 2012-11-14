@@ -2,7 +2,7 @@ module Backend.X64.Munch (
   munch
 ) where
 
-import Control.Monad.State
+import Control.Monad.Writer
 import Data.Map (Map)
 import qualified Data.Map as Map
 
@@ -10,16 +10,14 @@ import Backend.IR.IROp
 import qualified Backend.IR.Tree as T
 import Backend.IR.Temp
 import Backend.X64.Insn
+import qualified Backend.X64.Frame as F
 
-type MunchGen = StateT MunchState TempGen
+type MunchGen = WriterT [Insn] TempGen
 
-type MunchState = [Insn]
-
-emptyMunchState :: MunchState
-emptyMunchState = []
-
-munch :: T.Tree -> TempGen MunchState
-munch t = execStateT (munch' t) emptyMunchState
+munch :: T.Tree -> TempGen [Insn]
+munch t = do
+  insnList <- execWriterT (munch' t)
+  return $ PInsn InsertPrologue:insnList
 
 munch' = munchTree
 
@@ -34,9 +32,7 @@ newLabel = do
   return $ IntLabel i
 
 emitInsn :: Insn -> MunchGen ()
-emitInsn i = do
-  is <- get
-  put $ is ++ [i]
+emitInsn i = tell [i]
 
 -- Here comes the pattern matcher
 -- XXX: manual munch will produce good code at the expense of duplicated
@@ -158,7 +154,7 @@ munchTree t = case t of
 
   -- needs better handling
   (T.Call (T.Leaf (IROp_L name)) argTrees) -> do
-    forM_ (zip argTrees argRegs) $ \(t, dest) -> do
+    forM_ (zip argTrees F.argRegs) $ \(t, dest) -> do
       (Just r) <- munchTree t
       r <- ensureReg r
       emitInsn $ Mov dest r
@@ -167,9 +163,7 @@ munchTree t = case t of
 
   (T.Return t) -> do
     munchTree (T.Move (T.Leaf (IROp_R rax)) t)
-    -- epilogue
-    emitInsn (Mov (X64Op_I (IROp_R rsp)) (X64Op_I (IROp_R rbp)))
-    emitInsn (Pop (X64Op_I (IROp_R rbp)))
+    emitInsn (PInsn InsertEpilogue)
     emitInsn Ret
     return Nothing
 
@@ -190,10 +184,4 @@ ensureReg op = case op of
 -- Helpers
 isInt32 :: Int -> Bool
 isInt32 i = floor (- 2 ** 31) <= i && i <= floor (2 ** 31 - 1)
-
-argRegs :: [X64Op]
-argRegs = map (X64Op_I . IROp_R) [rdi, rsi, rdx, rcx, r8, r9] ++ stackArgGen
-  where
-    stackArgGen = map (X64Op_M . nthStackArg) [0..]
-    nthStackArg n = Address rsp Nothing Scale1 (wordSize * n)
 

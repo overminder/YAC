@@ -14,6 +14,7 @@ import Backend.X64.DataFlow
 import Backend.X64.FlowGraph
 import Backend.X64.GraphBuilder
 import Backend.X64.RegAlloc
+import Backend.X64.Frame
 
 import Frontend.ObjModel
 import Frontend.Parser
@@ -25,7 +26,7 @@ prettifyInsnOnly insnList = List.intercalate "\n" (map show insnList)
 
 visualize1 :: Cell -> IO ()
 visualize1 prog = do
-  let (tree, insns, graph, graph', niter, insns', raInsn) = runTempGen $ do 
+  let output = runTempGen $ do 
         tree <- IRGen.gen prog
         insns <- munch tree
         graph <- buildGraph insns
@@ -37,15 +38,18 @@ visualize1 prog = do
                 g' = runLiveness g
         let (graph2, niter) = iterLiveness graph' 0
             insns' = toTrace graph2
-        raInsn <- alloc insns'
-        return (tree, insns, graph, graph2, niter, insns', raInsn)
+        runFrameGen $ do
+          insns'' <- alloc insns'
+          insns'' <- insertProAndEpilogue insns''
+          insns'' <- formatOutput insns''
+          return insns''
   -- putStrLn $ "\t.ir-tree\n" ++ show tree
   -- putStrLn $ "\t.insn\n" ++ prettifyInsnOnly insns
   -- putStrLn $ "\t.graph\n" ++ show graph
   -- putStrLn $ "\t.graph#" ++ show niter ++ "\n" ++ show graph'
   -- putStrLn $ "\t.insn'\n" ++ prettifyInsnOnly insns'
   -- putStrLn $ "\t.regalloc-insn\n" ++ prettifyInsnOnly raInsn
-  mapM_ (putStrLn . gasShow) raInsn
+  putStrLn output
 
 main = do
   input <- getContents

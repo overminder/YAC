@@ -8,6 +8,11 @@ Yet Another Compiler
 Usage
 -----
 
+  - Compile
   ``ghc --make Main``
 
+  - See assembly result
   ``echo "(define a 1) (define b 2) (define c (+ a b))" | ./Main``
+
+  - Run assembly (require csi)
+  ``./SampleProg/compile-and-run.py ./SampleProg/test-if.ss``
