@@ -1,0 +1,1 @@
+(funcall malloc 8)

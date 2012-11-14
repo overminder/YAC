@@ -5,6 +5,7 @@ module Backend.X64.Insn (
   Cond(..),
   Label(..),
   Insn(..),
+  wordSize,
   allRegs,
   rax, rcx, rdx, rbx, rsp, rbp, rsi, rdi,
   r8, r9, r10, r11, r12, r13, r14, r15,
@@ -12,11 +13,15 @@ module Backend.X64.Insn (
   isBranchInsn,
   isBranchTarget,
   getBranchTarget,
-  mightFallThrough
+  mightFallThrough,
+  gasShow,
 ) where
 
 import Data.List (intercalate)
 import Backend.IR.IROp
+
+wordSize :: Int
+wordSize = 8
 
 -- X64 reg spec
 allRegs = map MReg ["rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi",
@@ -42,20 +47,20 @@ data Address = Address Reg (Maybe Reg) Scale Int
 
 instance Show Address where
   show (Address base index scale disp) =
-    showDisp disp ++ "(" ++ show base ++ "," ++ showIndex index ++ "," ++
+    showDisp disp ++ "(" ++ show base ++ showIndex index ++ 
     showScale scale ++ ")"
     where
       showDisp :: Int -> String
       showDisp 0 = ""
       showDisp disp = show disp
 
-      showIndex :: Maybe Reg -> String
-      showIndex (Just r) = show r
-      showIndex Nothing = ""
-
       showScale :: Scale -> String
       showScale Scale1 = ""
-      showScale s = show s
+      showScale s@_ = "," ++ show (scaleToInt s)
+
+      showIndex :: Maybe Reg -> String
+      showIndex (Just r) = "," ++ show r
+      showIndex Nothing = ""
 
 -- Op_I -> IR operand | Op_M -> machine-dependent operand
 data X64Op = X64Op_I IROp
@@ -110,7 +115,7 @@ instance Show Insn where
   show insn = case insn of
     (Add dest src) -> formatInsn "add" [show dest, show src]
     (Sub dest src) -> formatInsn "sub" [show dest, show src]
-    (Call label) -> formatInsn "call" [showLabel label]
+    (Call label) -> formatInsn "call" [unLabel label]
     (Cmp lhs rhs) -> formatInsn "cmp" [show lhs, show rhs]
     (J cond label) -> formatInsn ("j" ++ showCond cond) [unLabel label]
     (Jmp label) -> formatInsn "jmp" [unLabel label]
@@ -120,6 +125,21 @@ instance Show Insn where
     (Pop dest) -> formatInsn "pop" [show dest]
     Ret -> "ret"
     (BindLabel label) -> showLabel label
+
+gasShow :: Insn -> String
+gasShow insn = case insn of
+  (Add dest src) -> formatInsn "add" [show src, show dest]
+  (Sub dest src) -> formatInsn "sub" [show src, show dest]
+  (Call label) -> formatInsn "call" [unLabel label]
+  (Cmp lhs rhs) -> formatInsn "cmp" [show rhs, show lhs]
+  (J cond label) -> formatInsn ("j" ++ showCond cond) [unLabel label]
+  (Jmp label) -> formatInsn "jmp" [unLabel label]
+  (Lea dest src) -> formatInsn "lea" [show src, show dest]
+  (Mov dest src) -> formatInsn "mov" [show src, show dest]
+  (Push src) -> formatInsn "push" [show src]
+  (Pop dest) -> formatInsn "pop" [show dest]
+  Ret -> "ret"
+  (BindLabel label) -> showLabel label
 
 replaceVReg :: (Reg -> Reg) -> Insn -> Insn
 replaceVReg f insn = setOpsOfInsn (map (replaceOp f) (opsOfInsn insn)) insn

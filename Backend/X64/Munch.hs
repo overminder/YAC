@@ -138,7 +138,7 @@ munchTree t = case t of
     endLabel <- newLabel
     (Just v0) <- (munchTree t0)
     r0 <- ensureReg v0
-    emitInsn (Cmp (X64Op_I $ IROp_I 0) r0)
+    emitInsn (Cmp r0 (X64Op_I $ IROp_I 0))
     emitInsn (J Eq elseLabel)
     munchTree (T.Move (T.Leaf retValIR) t1)
     emitInsn (Jmp endLabel)
@@ -155,6 +155,15 @@ munchTree t = case t of
 
   (T.Leaf op) -> do
     return $ Just $ X64Op_I op
+
+  -- needs better handling
+  (T.Call (T.Leaf (IROp_L name)) argTrees) -> do
+    forM_ (zip argTrees argRegs) $ \(t, dest) -> do
+      (Just r) <- munchTree t
+      r <- ensureReg r
+      emitInsn $ Mov dest r
+    emitInsn $ Call (StringLabel name)
+    return $ Just (X64Op_I (IROp_R rax))
 
   (T.Return t) -> do
     munchTree (T.Move (T.Leaf (IROp_R rax)) t)
@@ -173,8 +182,18 @@ ensureReg op = case op of
     vReg <- newVReg
     emitInsn (Mov vReg op)
     return vReg
+  (X64Op_M addr) -> do
+    vReg <- newVReg
+    emitInsn (Mov vReg op)
+    return vReg
 
 -- Helpers
 isInt32 :: Int -> Bool
 isInt32 i = floor (- 2 ** 31) <= i && i <= floor (2 ** 31 - 1)
+
+argRegs :: [X64Op]
+argRegs = map (X64Op_I . IROp_R) [rdi, rsi, rdx, rcx, r8, r9] ++ stackArgGen
+  where
+    stackArgGen = map (X64Op_M . nthStackArg) [0..]
+    nthStackArg n = Address rsp Nothing Scale1 (wordSize * n)
 

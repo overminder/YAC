@@ -121,7 +121,7 @@ addToCurrBlock insn = do
 finishCurrBlock :: GraphGen ()
 finishCurrBlock = do
   modify $ \st -> st {
-    gbGraph = FG.addBlock (gbCurrBlock st) (gbGraph st),
+    gbGraph = FG.putBlock (gbCurrBlock st) (gbGraph st),
     gbCurrBlock = BB.empty
   }
 

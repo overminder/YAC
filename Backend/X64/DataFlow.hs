@@ -1,8 +1,8 @@
 module Backend.X64.DataFlow (
   DefUse(..),
-  mkDefUse,
   Liveness(..),
   DFInsn(..),
+  runDefUse,
   runLiveness
 ) where
 
@@ -14,8 +14,8 @@ import qualified Data.List as List
 
 import Backend.IR.IROp
 import Backend.X64.Insn
-import qualified Backend.X64.BasicBlock as BB
-import qualified Backend.X64.FlowGraph as FG
+import Backend.X64.FlowGraph (FlowGraph)
+import Backend.X64.Analyzable
 
 -- DefUse and liveness information attached to an instruction
 data DFInsn = DFInsn Insn DefUse Liveness
@@ -33,13 +33,21 @@ data DefUse = DefUse {
 instance Show DefUse where
   show du = "defs=" ++ show (getDef du) ++ ", uses=" ++ show (getUse du)
 
-mergeDefUse :: DefUse -> DefUse -> DefUse
-mergeDefUse du0 du1 = DefUse {
-  getDef = getDef du0 `List.union` getDef du1,
-  getUse = getUse du0 `List.union` getUse du1
-}
-
 emptyDefUse = DefUse [] []
+
+-- two sets of registers
+data Liveness = Liveness {
+  liveIn :: [Reg],
+  liveOut :: [Reg]
+}
+  deriving (Eq)
+instance Show Liveness where
+  show lv = "liveIn=" ++ show (liveIn lv) ++ ",liveOut=" ++ show (liveOut lv)
+
+emptyLiveness = Liveness [] []
+
+runDefUse :: FlowGraph Insn -> FlowGraph DFInsn
+runDefUse = fmap mkDefUse
 
 mkDefUse :: Insn -> DFInsn
 mkDefUse insn = DFInsn insn (mkDefUse' insn) emptyLiveness
@@ -54,6 +62,13 @@ mkDefUse' insn = case insn of
   (Push src) -> getDefUse [] [src]
   (Pop dest) -> getDefUse [dest] []
   _ -> emptyDefUse
+
+
+mergeDefUse :: DefUse -> DefUse -> DefUse
+mergeDefUse du0 du1 = DefUse {
+  getDef = getDef du0 `List.union` getDef du1,
+  getUse = getUse du0 `List.union` getUse du1
+}
 
 getDefUse :: [X64Op] -> [X64Op] -> DefUse
 getDefUse defs uses = excludeMReg $ mergeDefUse du0 du1
@@ -84,90 +99,22 @@ getDefUse defs uses = excludeMReg $ mergeDefUse du0 du1
     justToList (Just a) = [a]
     justToList Nothing = []
 
--- two sets of registers
-data Liveness = Liveness {
-  liveIn :: [Reg],
-  liveOut :: [Reg]
-}
-  deriving (Eq)
-instance Show Liveness where
-  show lv = "liveIn=" ++ show (liveIn lv) ++ ",liveOut=" ++ show (liveOut lv)
+runLiveness :: FlowGraph DFInsn -> FlowGraph DFInsn
+runLiveness = backwardAnalysis livenessAnalysis
 
-emptyLiveness = Liveness [] []
-
-type FlowGraph = FG.FlowGraph DFInsn
-type FlowGraphGen = State FlowGraph
-
-runLiveness :: FlowGraph -> FlowGraph
-runLiveness = execState runLiveness'
-
--- Backward analysis
-runLiveness' :: FlowGraphGen ()
-runLiveness' = do
-  bIdList <- liftM (reverse . FG.topologicallySortedBlockIds) get
-  forM_ bIdList $ \bid -> do
-    bbInsns <- getFullInsnList bid
-    succInsns <- getSuccInsns bid
-    let newBBInsn = mkLiveness bbInsns succInsns
-    setFullInsnList bid newBBInsn
-
-getFullInsnList :: BB.Id -> FlowGraphGen [DFInsn]
-getFullInsnList bid = do
-  bb <- liftM (FG.getBlock bid) get
-  return $ BB.getFullInsnList bb
-
-setFullInsnList :: BB.Id -> [DFInsn] -> FlowGraphGen ()
-setFullInsnList bid insnList = do
-  bb <- liftM (FG.getBlock bid) get
-  let newBB = BB.setFullInsnList insnList bb
-  modify $ FG.setBlock newBB
-
-getSuccInsns :: BB.Id -> FlowGraphGen [DFInsn]
-getSuccInsns bid = do
-  succMap <- liftM FG.succs get
-  let succBids = case Map.lookup bid succMap of
-        (Just sbs) -> sbs
-        Nothing -> []
-  forM succBids $ \bid -> do
-    bb <- liftM (FG.getBlock bid) get
-    return $ BB.getFirstInsn bb
-
-{- [initInsns...] [lastInsns] -> [liveness recalculated initInsns...]
-
-   Pseudo Code:
+{- Pseudo code for liveness analysis
      thisLv.liveIn = du.use `union` (thisLv.liveOut - du.def)
-     thisLv.liveOut = nextLv.liveIn
-
-   -OR-
-     thisLv <- emptyLv
-     forM du.use \v -> thisLv.liveIn.add v
-     forM nextLv.liveIn \v -> thisLv.liveOut.add v
-     forM thisLv.liveOut \v -> do 
-       guard (v `notElem` du.def)
-       thisLve.liveIn.add v
- -}
-mkLiveness :: [DFInsn] -> [DFInsn] -> [DFInsn]
-mkLiveness insnList lastInsns
-  = concatCheck $ List.init $ foldr combine [lastInsns] insnList
+     thisLv.liveOut = nextLv.liveIn -}
+livenessAnalysis :: DFInsn -> [DFInsn] -> DFInsn
+livenessAnalysis i succs = mk i allLiveIns
   where
-    concatCheck xs = if any (/=1) (map length xs)
-      then error "mkLiveness: concatCheck failed"
-      else concat xs
-
-    combine :: DFInsn -> [[DFInsn]] -> [[DFInsn]]
-    combine thisInsn nextInsnss@(nextInsns:_)
-      = [mk' thisInsn $ allLiveIns nextInsns]:nextInsnss
-
-    allLiveIns :: [DFInsn] -> [Reg]
-    allLiveIns insns = foldr List.union [] (map getIn insns)
-      where
-        getIn (DFInsn _ _ lv) = liveIn lv
-
-    mk' :: DFInsn -> [Reg] -> DFInsn
-    mk' (DFInsn insns du _) nextIns
+    mk :: DFInsn -> [Reg] -> DFInsn
+    mk (DFInsn insns du _) nextIns
       = (DFInsn insns du (Liveness liveIn' liveOut'))
       where
         liveIn' = (getUse du) `List.union` (liveOut' List.\\ (getDef du))
         liveOut' = nextIns
 
+    allLiveIns = foldr List.union [] (map getIn succs)
+    getIn (DFInsn _ _ lv) = liveIn lv
 

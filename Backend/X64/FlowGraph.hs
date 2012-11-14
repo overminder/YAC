@@ -5,9 +5,8 @@ module Backend.X64.FlowGraph (
   connect,
   addSucc,
   addPred,
-  addBlock,
   getBlock,
-  setBlock,
+  putBlock,
   topologicallySortedBlockIds,
   toTrace
 ) where
@@ -70,17 +69,15 @@ addPred f t g = newG
       (Just xs) -> Just (f:xs)
       Nothing -> Just [f]
 
-addBlock :: BasicBlock a -> FlowGraph a -> FlowGraph a
-addBlock bb g = g {
-  blocks = Map.insert (BB.bId bb) bb (blocks g)
-}
-
-setBlock = addBlock
-
 getBlock :: BB.Id -> FlowGraph a -> BasicBlock a
 getBlock bid g = bb
   where
     (Just bb) = Map.lookup bid $ blocks g
+
+putBlock :: BasicBlock a -> FlowGraph a -> FlowGraph a
+putBlock bb g = g {
+  blocks = Map.insert (BB.bId bb) bb (blocks g)
+}
 
 -- XXX hackish. Maybe it is okay for now...
 topologicallySortedBlockIds :: FlowGraph a -> [BB.Id]

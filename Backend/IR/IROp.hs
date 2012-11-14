@@ -17,11 +17,13 @@ instance Show Reg where
 
 data IROp = IROp_R Reg
           | IROp_I Int
+          | IROp_L String
   deriving (Eq, Ord)
 
 instance Show IROp where
   show (IROp_R r) = show r
   show (IROp_I i) = "$" ++ show i
+  show (IROp_L s) = s
 
 isMReg :: Reg -> Bool
 isMReg (MReg _) = True

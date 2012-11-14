@@ -29,7 +29,7 @@ visualize1 prog = do
         tree <- IRGen.gen prog
         insns <- munch tree
         graph <- buildGraph insns
-        let graph' = fmap mkDefUse graph
+        let graph' = runDefUse graph
             iterLiveness g n = if g' == g
               then (g, n)
               else iterLiveness g' (n+1)
@@ -39,17 +39,18 @@ visualize1 prog = do
             insns' = toTrace graph2
         raInsn <- alloc insns'
         return (tree, insns, graph, graph2, niter, insns', raInsn)
-  putStrLn $ "\t.ir-tree\n" ++ show tree
-  putStrLn $ "\t.insn\n" ++ prettifyInsnOnly insns
-  putStrLn $ "\t.graph\n" ++ show graph
-  putStrLn $ "\t.graph#" ++ show niter ++ "\n" ++ show graph'
-  putStrLn $ "\t.insn'\n" ++ prettifyInsnOnly insns'
-  putStrLn $ "\t.regalloc-insn\n" ++ prettifyInsnOnly raInsn
+  -- putStrLn $ "\t.ir-tree\n" ++ show tree
+  -- putStrLn $ "\t.insn\n" ++ prettifyInsnOnly insns
+  -- putStrLn $ "\t.graph\n" ++ show graph
+  -- putStrLn $ "\t.graph#" ++ show niter ++ "\n" ++ show graph'
+  -- putStrLn $ "\t.insn'\n" ++ prettifyInsnOnly insns'
+  -- putStrLn $ "\t.regalloc-insn\n" ++ prettifyInsnOnly raInsn
+  mapM_ (putStrLn . gasShow) raInsn
 
 main = do
   input <- getContents
   let (List c) = readProg input
-  putStrLn $ "\t.parse-result\n" ++ show (List c)
+  --putStrLn $ "\t.parse-result\n" ++ show (List c)
   case c of
     [Symbol "parse-success", prog] -> visualize1 prog
     [Symbol "parse-error", what] -> putStrLn $ show what

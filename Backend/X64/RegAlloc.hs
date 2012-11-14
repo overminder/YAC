@@ -17,8 +17,8 @@ import Backend.X64.Insn
 
 scratchRegs = [r13, r14, r15]
 
-usableRegs = filter (\x -> notElem x scratchRegs) [rax, rbx, rcx, rdx, rdi,
-  rsi, r8, r9, r10, r11, r12, r13, r14, r15]
+usableRegs = filter (\x -> notElem x scratchRegs) [rax, rbx,
+  r10, r11, r12, r13, r14, r15]
 
 regCount = length usableRegs
 
@@ -58,9 +58,6 @@ emptyAllocState = AllocState {
 
 type StackLoc = Int
 type StackLocGen = Int
-
-wordSize :: Int
-wordSize = 8
 
 newStackLoc :: AllocGen StackLoc
 newStackLoc = do
@@ -107,7 +104,7 @@ alloc insnList = do
         Push (X64Op_I (IROp_R rbp)),
         Mov (X64Op_I (IROp_R rbp)) (X64Op_I (IROp_R rsp))] ++
         if size /= 0
-          then [Add (X64Op_I (IROp_R rsp)) (X64Op_I (IROp_I size))]
+          then [Sub (X64Op_I (IROp_R rsp)) (X64Op_I (IROp_I size))]
           else []
   return $ prologue ++ insnList'
 

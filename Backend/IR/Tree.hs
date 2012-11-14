@@ -4,6 +4,8 @@ module Backend.IR.Tree (
   toList
 ) where
 
+import qualified Data.List as List
+
 import Backend.IR.IROp
 
 data Tree = Leaf IROp
@@ -12,6 +14,7 @@ data Tree = Leaf IROp
           | Move Tree Tree
           | Deref Tree
           | If Tree Tree Tree
+          | Call Tree [Tree]
           | Return Tree
           | Nop
   deriving (Eq)
@@ -26,6 +29,8 @@ instance Show Tree where
   show (Deref t) = "*(" ++ show t ++ ")"
   show (If t0 t1 t2) = "[if "  ++ show t0 ++ " then " ++
     show t1 ++ " else " ++ show t2 ++ "]"
+  show (Call t ts)
+    = show t ++ ".call(" ++ List.intercalate "," (map show ts) ++ ")"
   show (Return t) = "[return " ++ show t ++ "]"
   show Nop = error "show Nop: empty program body?"
 

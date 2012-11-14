@@ -94,9 +94,14 @@ genWithList c = case c of
       Nothing -> error ("Unbound variable at #set!: " ++ (show $ List lst))
 
   -- (begin ...)
-  ((Symbol "begin"):xs) -> do
+  (Symbol "begin":xs) -> do
     trees <- mapM genWith xs
     return $ T.fromList trees
+
+  -- (funcall name args)
+  (Symbol "funcall":Symbol name:args) -> do
+    argTrees <- mapM genWith args
+    return $ T.Call (T.Leaf $ IROp_L name) argTrees
 
   -- otherwise
   xs@_ -> error $ "Unexpected form: " ++ show (List xs)
