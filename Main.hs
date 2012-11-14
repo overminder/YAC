@@ -27,29 +27,21 @@ prettifyInsnOnly insnList = List.intercalate "\n" (map show insnList)
 visualize1 :: Cell -> IO ()
 visualize1 prog = do
   let output = runTempGen $ do 
-        tree <- IRGen.gen prog
-        insns <- munch tree
-        graph <- buildGraph insns
-        let graph' = runDefUse graph
-            iterLiveness g n = if g' == g
-              then (g, n)
-              else iterLiveness g' (n+1)
-              where
-                g' = runLiveness g
-        let (graph2, niter) = iterLiveness graph' 0
-            insns' = toTrace graph2
-        runFrameGen $ do
-          insns'' <- alloc insns'
-          insns'' <- insertProAndEpilogue insns''
-          insns'' <- formatOutput insns''
-          return insns''
-  -- putStrLn $ "\t.ir-tree\n" ++ show tree
-  -- putStrLn $ "\t.insn\n" ++ prettifyInsnOnly insns
-  -- putStrLn $ "\t.graph\n" ++ show graph
-  -- putStrLn $ "\t.graph#" ++ show niter ++ "\n" ++ show graph'
-  -- putStrLn $ "\t.insn'\n" ++ prettifyInsnOnly insns'
-  -- putStrLn $ "\t.regalloc-insn\n" ++ prettifyInsnOnly raInsn
-  putStrLn output
+        toplevelDefs <- IRGen.gen prog
+        forM toplevelDefs $ \d -> do
+          case d of
+            (IRGen.FuncDef name formals tree) -> runFrameGen $ do
+              setFuncName name
+              setFuncArgs formals
+              rawInsns <- munch tree
+              graph <- liftM runDefUse $ buildGraph rawInsns
+              let (graph', niter) = iterLiveness graph 0
+                  flowInsns = toTrace graph'
+              allocInsns <- alloc flowInsns
+              insns' <- insertProAndEpilogue allocInsns
+              formatOutput insns'
+            _ -> error $ "Toplevel form not supported: " ++ show d
+  mapM_ putStrLn output
 
 main = do
   input <- getContents

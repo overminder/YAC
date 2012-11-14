@@ -2,37 +2,44 @@ module Backend.X64.Munch (
   munch
 ) where
 
+import Control.Monad.State
 import Control.Monad.Writer
 import Data.Map (Map)
 import qualified Data.Map as Map
 
 import Backend.IR.IROp
 import qualified Backend.IR.Tree as T
-import Backend.IR.Temp
 import Backend.X64.Insn
 import qualified Backend.X64.Frame as F
 
-type MunchGen = WriterT [Insn] TempGen
+type MunchGen = WriterT [Insn] F.FrameGen
 
-munch :: T.Tree -> TempGen [Insn]
-munch t = do
-  insnList <- execWriterT (munch' t)
-  return $ PInsn InsertPrologue:insnList
+munch :: T.Tree -> F.FrameGen [Insn]
+munch t = execWriterT (munch' t)
 
-munch' = munchTree
+munch' :: T.Tree -> MunchGen ()
+munch' t = do
+  emitInsn $ PInsn InsertPrologue
+  funcArgs <- lift $ liftM F.funcArgs get
+  emitInsns $ map (\(src, dest) -> Mov (X64Op_I $ IROp_R dest) src) (zip F.argOps funcArgs)
+  munchTree t
+  return ()
 
 newVReg :: MunchGen X64Op
-newVReg = liftM toReg (lift nextTemp)
+newVReg = liftM toReg (lift F.nextTemp)
   where
     toReg = X64Op_I . IROp_R . VReg
 
 newLabel :: MunchGen Label
 newLabel = do
-  i <- lift nextTemp
+  i <- lift F.nextTemp
   return $ IntLabel i
 
+emitInsns :: [Insn] -> MunchGen ()
+emitInsns = tell
+
 emitInsn :: Insn -> MunchGen ()
-emitInsn i = tell [i]
+emitInsn i = emitInsns [i]
 
 -- Here comes the pattern matcher
 -- XXX: manual munch will produce good code at the expense of duplicated
@@ -154,7 +161,7 @@ munchTree t = case t of
 
   -- needs better handling
   (T.Call (T.Leaf (IROp_L name)) argTrees) -> do
-    forM_ (zip argTrees F.argRegs) $ \(t, dest) -> do
+    forM_ (zip argTrees F.argOps) $ \(t, dest) -> do
       (Just r) <- munchTree t
       r <- ensureReg r
       emitInsn $ Mov dest r

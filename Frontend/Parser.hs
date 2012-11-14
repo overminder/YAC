@@ -2,16 +2,13 @@ module Frontend.Parser (
   readProg
 ) where
 
-import Text.ParserCombinators.Parsec hiding (spaces)
+import Text.ParserCombinators.Parsec
 import Control.Monad
 
 import Frontend.ObjModel
 
 symbol :: Parser Char
 symbol = oneOf "!#$%&|+-*/:<=>?@^_~"
-
-spaces :: Parser ()
-spaces = skipMany1 space
 
 readProg :: String -> Cell
 readProg input = case parse parseProg "Scheme" input of
@@ -39,7 +36,7 @@ parsePair = do
   return p
 
 parseList :: Parser Cell
-parseList = liftM List $ sepBy parseCell spaces
+parseList = liftM List $ endBy parseCell spaces
 
 parseDottedPair :: Parser Cell
 parseDottedPair = do

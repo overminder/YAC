@@ -1,11 +1,12 @@
 #!/usr/bin/env python
 
+import sys
 import random
 
 MAX_DEPTH = 15
 
 def rand_nat(depth):
-    return random.randint(1, 65535)
+    return str(random.randint(1, 5))
 
 def rand_expr(depth):
     depth += 1
@@ -22,4 +23,9 @@ def rand_if(depth):
 def rand_add(depth):
     return '(+ %s %s)' % (rand_expr(depth), rand_expr(depth))
 
-print rand_expr(0)
+print '(define main (lambda ()\n'
+expr = rand_expr(0)
+print expr
+print '\n))'
+
+sys.stderr.write('TOTAL chars: %s\n' % len(expr))

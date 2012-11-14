@@ -6,10 +6,10 @@ import Control.Monad.State
 import Data.Map (Map)
 import qualified Data.Map as Map
 
-import Backend.IR.Temp
 import Backend.X64.Insn
 import qualified Backend.X64.BasicBlock as BB
 import qualified Backend.X64.FlowGraph as FG
+import qualified Backend.X64.Frame as F
 
 -- Specialized version for graph building
 type BasicBlock = BB.BasicBlock Insn
@@ -30,7 +30,7 @@ emptyGraphBuilder = GraphBuilder {
   gbLabelMap = Map.empty
 }
 
-type GraphGen = StateT GraphBuilder TempGen
+type GraphGen = StateT GraphBuilder F.FrameGen
 
 getGraph :: GraphGen FlowGraph
 getGraph = liftM gbGraph get
@@ -48,7 +48,7 @@ setCurrBlockId newId = do
     gbCurrBlock = (gbCurrBlock st) { BB.bId = newId }
   }
 
-buildGraph :: [Insn] -> TempGen FlowGraph
+buildGraph :: [Insn] -> F.FrameGen FlowGraph
 buildGraph insnList = liftM gbGraph (execStateT (buildGraph' insnList) emptyGraphBuilder)
 
 buildGraph' :: [Insn] -> GraphGen ()
@@ -127,7 +127,7 @@ finishCurrBlock = do
 
 createBlock :: GraphGen BB.Id
 createBlock = do
-  newId <- lift nextTemp
+  newId <- lift F.nextTemp
   modify $ \st -> st {
     gbCurrBlock = BB.empty
   }

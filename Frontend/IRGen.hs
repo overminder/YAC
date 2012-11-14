@@ -1,5 +1,6 @@
 module Frontend.IRGen (
   IRGen(..),
+  ToplevelDef(..),
   gen
 ) where
 
@@ -13,17 +14,43 @@ import Backend.IR.Temp
 import Backend.IR.Tree (Tree)
 import qualified Backend.IR.Tree as T
 
+data ToplevelDef = FuncDef String [Reg] Tree -- name args body
+                 | VarDef String (Maybe Int) -- name initialValue
+  deriving (Show)
+
+data IRGenState = IRGenState {
+  symTab :: SymTab,
+  defs :: [ToplevelDef]
+}
+
 type SymTab = Map String Reg
-type IRGen = StateT SymTab TempGen
+
+empty :: IRGenState
+empty = IRGenState {
+  symTab = Map.empty,
+  defs = []
+}
+
+type IRGen = StateT IRGenState TempGen
 
 getNextId :: IRGen Int
 getNextId = lift nextTemp
 
 putSymTab :: SymTab -> IRGen ()
-putSymTab = put
+putSymTab tab = modify $ \st -> st {
+  symTab = tab
+}
 
 getSymTab :: IRGen SymTab
-getSymTab = get
+getSymTab = liftM symTab get
+
+clearSymTab :: IRGen ()
+clearSymTab = putSymTab Map.empty
+
+putDef :: ToplevelDef -> IRGen ()
+putDef d = modify $ \st -> st {
+  defs = d:defs st
+}
 
 lookupSymbol :: String -> IRGen (Maybe Reg)
 lookupSymbol name = liftM (Map.lookup name) getSymTab
@@ -39,13 +66,36 @@ memorizeSymbol name = do
       putSymTab $ Map.insert name newReg tab
       return newReg
 
-gen :: Cell -> TempGen Tree
-gen c = evalStateT (gen' c) Map.empty
+gen :: Cell -> TempGen [ToplevelDef]
+gen c = liftM defs $ execStateT (gen' c) empty
 
-gen' :: Cell -> IRGen Tree
-gen' (List c) = do
-  t <- genWith $ List (Symbol "begin":c)
-  return $ T.Return t
+gen' :: Cell -> IRGen ()
+gen' (List cs) = do
+  forM_ cs $ \c -> do
+    def <- genToplevel c
+    putDef def
+
+genToplevel :: Cell -> IRGen ToplevelDef
+genToplevel c = case c of
+  (List [Symbol "define", Symbol name]) -> return $ VarDef name Nothing
+  (List [Symbol "define", Symbol name,
+         List (Symbol "lambda":formals:body)]) -> do
+    formalRegs <- defineFormalArgs formals
+    bodyTree <- liftM (T.Return . T.fromList) $ mapM genWith body
+    clearSymTab
+    return $ FuncDef name formalRegs bodyTree
+  (List [Symbol "define", Symbol name, Fixnum i]) -> do
+    return $ VarDef name (Just i)
+  _ -> error $ "IRGen.genToplevel: illegal form: " ++ show c
+
+defineFormalArgs :: Cell -> IRGen [Reg]
+defineFormalArgs c = case c of
+  (List xs) -> forM xs $ \(Symbol s) -> do
+    shouldBeNothing <- lookupSymbol s
+    case shouldBeNothing of
+      Nothing -> memorizeSymbol s
+      (Just _) -> error $ "IRGen.defineFormalArgs: redefination of " ++ s
+  _ -> error $ "IRGen.getFormalRegs: illegal args: " ++ show c
 
 genWith :: Cell -> IRGen Tree
 genWith c = case c of

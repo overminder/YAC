@@ -3,7 +3,8 @@ module Backend.X64.DataFlow (
   Liveness(..),
   DFInsn(..),
   runDefUse,
-  runLiveness
+  runLiveness,
+  iterLiveness
 ) where
 
 import Control.Monad
@@ -101,6 +102,13 @@ getDefUse defs uses = excludeMReg $ mergeDefUse du0 du1
 
 runLiveness :: FlowGraph DFInsn -> FlowGraph DFInsn
 runLiveness = backwardAnalysis livenessAnalysis
+
+iterLiveness :: FlowGraph DFInsn -> Int -> (FlowGraph DFInsn, Int)
+iterLiveness g n
+  | g' == g = (g, n)
+  | otherwise = iterLiveness g' (n+1) 
+  where
+    g' = runLiveness g
 
 {- Pseudo code for liveness analysis
      thisLv.liveIn = du.use `union` (thisLv.liveOut - du.def)

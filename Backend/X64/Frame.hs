@@ -13,12 +13,14 @@ module Backend.X64.Frame (
   freeReg,
   allocTempReg,
   restoreTempRegs,
+  setFuncName,
+  setFuncArgs,
 
   StorageType(..),
   isInStack,
 
   wordSize,
-  argRegs,
+  argOps,
   regCount,
 ) where
 
@@ -39,7 +41,8 @@ data Frame = Frame {
   frameSize :: Int,
   mRegUses :: [Reg],
   freeRegs :: [Reg],
-  tempRegs :: [Reg]
+  tempRegs :: [Reg],
+  funcArgs :: [Reg]
 }
 
 type FrameGen = StateT Frame Temp.TempGen
@@ -57,18 +60,28 @@ type StackLocGen = Int
 
 -- Defs
 
-scratchRegs = [r13, r14, r15]
+-- Note: none of the scratch regs are callee-saved.
+-- we need at most 3 scratch regs since a x64 insn can at most contain 3 regs
+scratchRegs = [rax, rcx, rdx]
 
-usableRegs = filter (\x -> notElem x scratchRegs) [rax, rbx,
-  r10, r11, r12, r13, r14, r15]
+argRegs = [rdi, rsi, rdx, rcx, r8, r9]
+
+calleeSaveRegs = [rbp, rbx, r12, r13, r14, r15]
+isCalleeSave r = r `elem` calleeSaveRegs
+
+usableRegs = useMore ++ useLess
+  where
+    (useLess, useMore) = span isCalleeSave usableRegs'
+    usableRegs' = filter (\x -> x `notElem` scratchRegs ++ argRegs) [rax, rbx,
+      rcx, rdx, rdi, rsi, r8, r9, r10, r11, r12, r13, r14, r15]
 
 regCount = length usableRegs
 
 wordSize :: Int
 wordSize = 8
 
-argRegs :: [X64Op]
-argRegs = map (X64Op_I . IROp_R) [rdi, rsi, rdx, rcx, r8, r9] ++ stackArgGen
+argOps :: [X64Op]
+argOps = map (X64Op_I . IROp_R) argRegs ++ stackArgGen
   where
     stackArgGen = map (X64Op_M . nthStackArg) [0..]
     nthStackArg n = Address rsp Nothing Scale1 (wordSize * n)
@@ -81,7 +94,8 @@ empty = Frame {
   frameSize = 0,
   mRegUses = [],
   freeRegs = usableRegs,
-  tempRegs = scratchRegs
+  tempRegs = scratchRegs,
+  funcArgs = []
 }
 
 nextTemp :: FrameGen Int
@@ -117,6 +131,16 @@ getStorageType r = do
   let (Just sty) = Map.lookup r regMap
   return sty
 
+setFuncName :: String -> FrameGen ()
+setFuncName s = modify $ \st -> st {
+  name = s
+}
+
+setFuncArgs :: [Reg] -> FrameGen ()
+setFuncArgs rs = modify $ \st -> st {
+  funcArgs = rs
+}
+
 allocReg :: FrameGen Reg
 allocReg = do
   (r:frs) <- liftM freeRegs get
@@ -139,6 +163,7 @@ allocTempReg = do
   modify $ \st -> st {
     tempRegs = trs
   }
+  useReg r
   return r
 
 restoreTempRegs :: FrameGen ()
@@ -153,15 +178,23 @@ insertProAndEpilogue insnList = do
     case insn of
       (PInsn InsertPrologue) -> do
         spaceNeeded <- liftM frameSize get
-        return $ [Push (X64Op_I (IROp_R rbp)),
-                  Mov (X64Op_I (IROp_R rbp)) (X64Op_I (IROp_R rsp))] ++
-                  if spaceNeeded /= 0
-                    then [Sub (X64Op_I (IROp_R rsp))
-                              (X64Op_I (IROp_I spaceNeeded))]
-                    else []
-      (PInsn InsertEpilogue) ->
-        return [Mov (X64Op_I (IROp_R rsp)) (X64Op_I (IROp_R rbp)),
-                Pop (X64Op_I (IROp_R rbp))]
+        mRegs <- liftM mRegUses get
+        let saveInsns = map (Push . X64Op_I . IROp_R)
+                            (filter isCalleeSave mRegs)
+            enterInsns = [Push (X64Op_I (IROp_R rbp)),
+                          Mov (X64Op_I (IROp_R rbp)) (X64Op_I (IROp_R rsp))]
+            frameAdjInsns = if spaceNeeded /= 0
+                              then [Sub (X64Op_I (IROp_R rsp))
+                                        (X64Op_I (IROp_I spaceNeeded))]
+                              else []
+        return $ enterInsns ++ frameAdjInsns ++ saveInsns
+      (PInsn InsertEpilogue) -> do
+        mRegs <- liftM mRegUses get
+        let restoreInsns = map (Pop . X64Op_I . IROp_R)
+                               (reverse (filter isCalleeSave mRegs))
+            leaveInsns = [Mov (X64Op_I (IROp_R rsp)) (X64Op_I (IROp_R rbp)),
+                          Pop (X64Op_I (IROp_R rbp))]
+        return $ restoreInsns ++ leaveInsns
       _ -> return [insn]
 
 formatOutput :: [Insn] -> FrameGen String
