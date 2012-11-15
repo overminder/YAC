@@ -1,12 +1,12 @@
 (define main
   (lambda ()
-    (funcall putInt (funcall fibo 30))
+    (%funcall putInt (%funcall fibo 40))
     0))
 
 (define fibo
   (lambda (n)
     (if (< n 2)
         n
-	(+ (funcall fibo (- n 1))
-	   (funcall fibo (- n 2))))))
+	(+ (%funcall fibo (- n 1))
+	   (%funcall fibo (- n 2))))))
 

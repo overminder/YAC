@@ -1,28 +1,25 @@
 module Main where
 
-import System
 import Control.Monad
 import qualified Data.List as List
 
-import Backend.IR.IROp (IROp (..), Reg (..), getReg)
 import Backend.IR.Temp
-import qualified Backend.IR.Tree as IRTree
 
-import Backend.X64.Insn
 import Backend.X64.Munch
 import Backend.X64.DataFlow
 import Backend.X64.FlowGraph
 import Backend.X64.GraphBuilder
 import Backend.X64.RegAlloc
-import Backend.X64.Frame
+import qualified Backend.X64.Frame as F
+import Backend.X64.Peephole
 
 import Frontend.ObjModel
 import Frontend.Parser
 --import Frontend.Rewrite
 import qualified Frontend.IRGen as IRGen
 
-prettifyInsnOnly :: Show a => [a] -> String
-prettifyInsnOnly insnList = List.intercalate "\n" (map show insnList)
+showMany :: Show a => [a] -> String
+showMany insnList = List.intercalate "\n" (map show insnList)
 
 visualize1 :: Cell -> IO ()
 visualize1 prog = do
@@ -30,25 +27,32 @@ visualize1 prog = do
         toplevelDefs <- IRGen.gen prog
         forM toplevelDefs $ \d -> do
           case d of
-            (IRGen.FuncDef name formals tree) -> runFrameGen $ do
-              setFuncName name
-              setFuncArgs formals
+            (IRGen.FuncDef name formals tree) -> F.runFrameGen $ do
+              F.setFuncName name
+              F.setFuncArgs formals
               rawInsns <- munch tree
-              graph <- liftM runDefUse $ buildGraph rawInsns
-              let (graph', niter) = iterLiveness graph 0
-                  flowInsns = toTrace graph'
+              rawInsns1 <- runPeephole rawInsns
+              graph <- liftM runDefUse $ buildGraph rawInsns1
+              let (graph1, _) = iterLiveness graph 0
+                  flowInsns = toTrace graph1
               allocInsns <- alloc flowInsns
-              allocInsns <- insertProAndEpilogue allocInsns
+              allocInsns1 <- F.insertProAndEpilogue allocInsns
               -- second graph, to get liveness around call sites
-              graph <- liftM runDefUse $ buildGraph allocInsns
-              let (graph', niter) = iterLiveness graph 0
-                  flowInsns' = toTrace graph'
-              insns' <- insertCallerSave flowInsns'
-              insns' <- patchCalleeMovArg insns'
-              formatOutput insns'
+              graph2 <- liftM runDefUse $ buildGraph allocInsns1
+              let (graph3, _) = iterLiveness graph2 0
+                  flowInsns' = toTrace graph3
+              insns1 <- F.insertCallerSave flowInsns'
+              insns2 <- F.patchCalleeMovArg insns1
+              finalOutput <- F.formatOutput insns2
+              -- let outputs = [showMany rawInsns,
+              --                showMany flowInsns,
+              --                finalOutput]
+              --return $ List.intercalate "------\n\n" outputs
+              return finalOutput
             _ -> error $ "Toplevel form not supported: " ++ show d
   mapM_ putStrLn output
 
+main :: IO ()
 main = do
   input <- getContents
   let (List c) = readProg input
@@ -56,4 +60,5 @@ main = do
   case c of
     [Symbol "parse-success", prog] -> visualize1 prog
     [Symbol "parse-error", what] -> putStrLn $ show what
+    _ -> error "not reached"
 

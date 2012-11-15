@@ -8,5 +8,5 @@
 
 (define main
   (lambda ()
-    (funcall putInt (funcall add (funcall id 1) (funcall id 2)))))
+    (%funcall putInt (%funcall add (%funcall id 1) (%funcall id 2)))))
 

@@ -6,6 +6,7 @@ import Control.Monad.State
 import Data.Map (Map)
 import qualified Data.Map as Map
 
+import Backend.IR.IROp
 import Backend.X64.Insn
 import qualified Backend.X64.BasicBlock as BB
 import qualified Backend.X64.FlowGraph as FG
@@ -18,12 +19,13 @@ type FlowGraph = FG.FlowGraph Insn
 data GraphBuilder = GraphBuilder {
   gbGraph :: FlowGraph,
   gbCurrBlock :: BasicBlock,
-  gbDefConns :: [(BB.Id, Label)],
-  gbLabelMap :: Map Label BB.Id
+  gbDefConns :: [(BB.Id, Imm)],
+  gbLabelMap :: Map Imm BB.Id
 }
   deriving (Show)
 
-emptyGraphBuilder = GraphBuilder {
+empty :: GraphBuilder
+empty = GraphBuilder {
   gbGraph = FG.empty,
   gbCurrBlock = BB.empty,
   gbDefConns = [],
@@ -31,9 +33,6 @@ emptyGraphBuilder = GraphBuilder {
 }
 
 type GraphGen = StateT GraphBuilder F.FrameGen
-
-getGraph :: GraphGen FlowGraph
-getGraph = liftM gbGraph get
 
 getCurrBlock :: GraphGen BasicBlock
 getCurrBlock = liftM gbCurrBlock get
@@ -43,13 +42,12 @@ getCurrBlockId = liftM (BB.bId . gbCurrBlock) get
 
 setCurrBlockId :: BB.Id -> GraphGen ()
 setCurrBlockId newId = do
-  bb <- getCurrBlock
   modify $ \st -> st {
     gbCurrBlock = (gbCurrBlock st) { BB.bId = newId }
   }
 
 buildGraph :: [Insn] -> F.FrameGen FlowGraph
-buildGraph insnList = liftM gbGraph (execStateT (buildGraph' insnList) emptyGraphBuilder)
+buildGraph insnList = liftM gbGraph (execStateT (buildGraph' insnList) empty)
 
 buildGraph' :: [Insn] -> GraphGen ()
 buildGraph' insnList = do
@@ -58,6 +56,7 @@ buildGraph' insnList = do
   mapM_ addOneInsn insnList
   resolveDefConns
 
+pass :: Monad m => m ()
 pass = return ()
 
 addOneInsn :: Insn -> GraphGen ()
@@ -90,7 +89,7 @@ addOneInsn insn
   --    Label: <-
   -- For this case, we can just merge the two labels together
   | isBranchTarget insn = do
-      let (BindLabel label) = insn
+      let (BindLabel (X64Op_I (IROp_I label))) = insn
       currBlock <- getCurrBlock
       if BB.hasNoInsn currBlock
         then pass -- case 1 and 3
@@ -141,17 +140,18 @@ connectBlock f t = do
     gbGraph = FG.connect f t (gbGraph st)
   }
 
-addDeferredConnection :: BB.Id -> Label -> GraphGen ()
+addDeferredConnection :: BB.Id -> Imm -> GraphGen ()
 addDeferredConnection bid label = modify $ \st -> st {
   gbDefConns = (bid, label):(gbDefConns st)
 }
 
-addLabelMapping :: Label -> GraphGen ()
+addLabelMapping :: Imm -> GraphGen ()
 addLabelMapping label = do
   bid <- getCurrBlockId
   modify $ \st -> st {
     gbLabelMap = Map.insert label bid (gbLabelMap st),
-    gbCurrBlock = BB.addLabel (BindLabel label) (gbCurrBlock st)
+    gbCurrBlock = BB.addLabel (BindLabel $ X64Op_I $ IROp_I label)
+                              (gbCurrBlock st)
   }
 
 setEntry :: BB.Id -> GraphGen ()

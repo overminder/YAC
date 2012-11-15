@@ -60,12 +60,19 @@ mkDefUse' :: Insn -> DefUse
 mkDefUse' insn = case insn of
   (Add dest src) -> getDefUse [dest] [dest, src]
   (Sub dest src) -> getDefUse [dest] [dest, src]
+  (Call dest) -> getDefUse [] [dest]
   (Cmp lhs rhs) -> getDefUse [] [lhs, rhs]
+  (Jmp dest) -> getDefUse [] [dest]
   (Lea dest src) -> getDefUse [dest] [src]
   (Mov dest src _) -> getDefUse [dest] [src]
   (Push src) -> getDefUse [] [src]
   (Pop dest) -> getDefUse [dest] []
-  _ -> emptyDefUse
+  (PInsn InsertPrologue) -> emptyDefUse
+  (PInsn InsertEpilogue) -> emptyDefUse
+  (J _ _) -> emptyDefUse
+  (BindLabel _) -> emptyDefUse
+  Ret -> emptyDefUse
+  --_ -> error $ "DataFlow.mkDefUse: undefined insn: " ++ show insn
 
 
 mergeDefUse :: DefUse -> DefUse -> DefUse

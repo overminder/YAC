@@ -2,14 +2,13 @@ module Backend.X64.Insn (
   Scale(..),
   Address(..),
   X64Op(..),
-  Label(..),
   Insn(..),
   MovType(..),
   PseudoInsn(..),
   GasSyntax(..),
   allRegs,
   rax, rcx, rdx, rbx, rsp, rbp, rsi, rdi,
-  r8, r9, r10, r11, r12, r13, r14, r15,
+  r8, r9, r10, r11, r12, r13, r14, r15, rip,
   replaceVReg,
   isBranchInsn,
   isBranchTarget,
@@ -22,11 +21,14 @@ import Backend.IR.IROp
 import Backend.IR.Tree (Cond(..))
 
 -- X64 reg spec
+allRegs :: [Reg]
 allRegs = map MReg ["rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi",
-    "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15"]
+    "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15", "rip"]
 
-[rax, rcx, rdx, rbx, rsp, rbp, rsi, rdi, r8, r9, r10, r11, r12, r13, r14, r15]
-  = allRegs
+rax, rbx, rcx, rdx, rsp, rbp, rsi, rdi :: Reg
+r8, r9, r10, r11, r12, r13, r14, r15, rip :: Reg
+[rax, rcx, rdx, rbx, rsp, rbp, rsi, rdi,
+ r8, r9, r10, r11, r12, r13, r14, r15, rip] = allRegs
 
 data Scale = Scale1 | Scale2 | Scale4 | Scale8
   deriving (Eq, Ord)
@@ -40,7 +42,7 @@ scaleToInt Scale8 = 8
 instance Show Scale where
   show s = show (scaleToInt s)
 
-data Address = Address Reg (Maybe Reg) Scale Int
+data Address = Address Reg (Maybe Reg) Scale Imm
   deriving (Eq, Ord)
 
 instance Show Address where
@@ -48,9 +50,13 @@ instance Show Address where
     showDisp disp ++ "(" ++ show base ++ showIndex index ++ 
     showScale scale ++ ")"
     where
-      showDisp :: Int -> String
-      showDisp 0 = ""
-      showDisp disp = show disp
+      showDisp :: Imm -> String
+      showDisp imm = case imm of
+        (IVal i) -> case i of
+          0 -> ""
+          _ -> show i
+        (LVal s) -> s
+        _ -> error $ "X64.Insn.showDisp: wrong disp: " ++ show imm
 
       showScale :: Scale -> String
       showScale Scale1 = ""
@@ -77,34 +83,22 @@ showCond Lt = "l"
 showCond Eq = "e"
 showCond Ne = "ne"
 
-data Label = StringLabel String
-           | IntLabel Int
-  deriving (Show, Eq, Ord)
-
-unLabel :: Label -> String
-unLabel lbl = case lbl of
-  (StringLabel s) -> s
-  (IntLabel i) -> ".L" ++ show i
-
-showLabel :: Label -> String
-showLabel = (++":") . unLabel
-
 class GasSyntax a where
   gasShow :: a -> String
 
 data Insn = Add X64Op X64Op
           | Sub X64Op X64Op
-          | Call Label
+          | Call X64Op
           | Cmp X64Op X64Op
-          | J Cond Label
-          | Jmp Label
+          | J Cond X64Op
+          | Jmp X64Op
           | Lea X64Op X64Op
           | Mov X64Op X64Op MovType
           | Push X64Op
           | Pop X64Op
           | Ret
           | PInsn PseudoInsn
-          | BindLabel Label
+          | BindLabel X64Op
   deriving (Eq)
 
 data MovType = NormalMov
@@ -122,33 +116,41 @@ instance Show Insn where
   show insn = case insn of
     (Add dest src) -> formatInsn "add" [show dest, show src]
     (Sub dest src) -> formatInsn "sub" [show dest, show src]
-    (Call label) -> formatInsn "call" [unLabel label]
+    (Call dest) -> formatInsn "call" [showJumpTarget dest]
     (Cmp lhs rhs) -> formatInsn "cmp" [show lhs, show rhs]
-    (J cond label) -> formatInsn ("j" ++ showCond cond) [unLabel label]
-    (Jmp label) -> formatInsn "jmp" [unLabel label]
+    (J cond label) -> formatInsn ("j" ++ showCond cond) [showJumpTarget label]
+    (Jmp dest) -> formatInsn "jmp" [showJumpTarget dest]
     (Lea dest src) -> formatInsn "lea" [show dest, show src]
     (Mov dest src _) -> formatInsn "mov" [show dest, show src]
     (Push src) -> formatInsn "push" [show src]
     (Pop dest) -> formatInsn "pop" [show dest]
     (PInsn p) -> formatInsn (show p) []
     Ret -> "ret"
-    (BindLabel label) -> showLabel label
+    (BindLabel label) -> showJumpTarget label ++ ":"
 
 instance GasSyntax Insn where
   gasShow insn = case insn of
     (Add dest src) -> formatInsn "add" [show src, show dest]
     (Sub dest src) -> formatInsn "sub" [show src, show dest]
-    (Call label) -> formatInsn "call" [unLabel label]
+    (Call dest) -> formatInsn "call" [showJumpTarget dest]
     (Cmp lhs rhs) -> formatInsn "cmp" [show rhs, show lhs]
-    (J cond label) -> formatInsn ("j" ++ showCond cond) [unLabel label]
-    (Jmp label) -> formatInsn "jmp" [unLabel label]
+    (J cond label) -> formatInsn ("j" ++ showCond cond) [showJumpTarget label]
+    (Jmp dest) -> formatInsn "jmp" [showJumpTarget dest]
     (Lea dest src) -> formatInsn "lea" [show src, show dest]
     (Mov dest src _) -> formatInsn "mov" [show src, show dest]
     (Push src) -> formatInsn "push" [show src]
     (Pop dest) -> formatInsn "pop" [show dest]
     Ret -> "ret"
-    (BindLabel label) -> showLabel label
+    (BindLabel label) -> showJumpTarget label ++ ":"
     _ -> show insn
+
+showJumpTarget :: X64Op -> String
+showJumpTarget op = case op of
+  (X64Op_I (IROp_I (LAddr name))) -> name
+  (X64Op_I (IROp_I (LTmp i))) -> ".L" ++ show i
+  (X64Op_I (IROp_R r)) -> "*" ++ show r
+  (X64Op_M addr@(Address _ _ _ _)) -> "*" ++ show addr
+  _ -> error $ "unknown jump target: " ++ show op
 
 replaceVReg :: (Reg -> Reg) -> Insn -> Insn
 replaceVReg f insn = setOpsOfInsn (map (replaceOp f) (opsOfInsn insn)) insn
@@ -157,30 +159,44 @@ opsOfInsn :: Insn -> [X64Op]
 opsOfInsn insn = case insn of
   (Add op0 op1) -> [op0, op1]
   (Sub op0 op1) -> [op0, op1]
+  (Call op0)    -> [op0]
   (Cmp op0 op1) -> [op0, op1]
+  (Jmp op0)     -> [op0]
   (Lea op0 op1) -> [op0, op1]
   (Mov op0 op1 _) -> [op0, op1]
   (Push op0)    -> [op0]
   (Pop op0)     -> [op0]
-  _             -> []
+  (PInsn InsertPrologue) -> []
+  (PInsn InsertEpilogue) -> []
+  Ret           -> []
+  (J _ _)       -> []
+  (BindLabel _) -> []
+  --_             -> error $ "Insn.opsOfInsn: " ++ show insn
 
 setOpsOfInsn :: [X64Op] -> Insn -> Insn
 setOpsOfInsn ops insn = case (ops, insn) of
   ([op0, op1], (Add _ _)) -> Add op0 op1
   ([op0, op1], (Sub _ _)) -> Sub op0 op1
+  ([op0]     , (Call _) ) -> Call op0
   ([op0, op1], (Cmp _ _)) -> Cmp op0 op1
+  ([op0]     , (Jmp _)  ) -> Jmp op0
   ([op0, op1], (Lea _ _)) -> Lea op0 op1
   ([op0, op1], (Mov _ _ ty)) -> Mov op0 op1 ty
   ([op0]     , (Push _) ) -> Push op0
   ([op0]     , (Pop _)  ) -> Pop op0
-  ([]        , insn@_   ) -> insn
+  (_         , (PInsn InsertPrologue)) -> insn
+  (_         , (PInsn InsertEpilogue)) -> insn
+  (_         , Ret      ) -> insn
+  (_         , (J _ _))   -> insn
+  (_         , (BindLabel _)) -> insn
+  _             -> error $ "Insn.setOpsOfInsn: " ++ show insn
 
 replaceOp :: (Reg -> Reg) -> X64Op -> X64Op
 replaceOp f op = case op of
   (X64Op_I (IROp_R vReg@(VReg _))) -> X64Op_I (IROp_R $ f vReg)
   (X64Op_M (Address r0 maybeR1 scale imm))
     -> X64Op_M (Address (f r0) (fmap f maybeR1) scale imm)
-  op@_ -> op
+  _ -> op
 
 isBranchInsn :: Insn -> Bool
 isBranchInsn insn = case insn of
@@ -195,10 +211,10 @@ isBranchTarget insn = case insn of
   (BindLabel _) -> True
   _ -> False
 
-getBranchTarget :: Insn -> Maybe Label
+getBranchTarget :: Insn -> Maybe Imm
 getBranchTarget insn = case insn of
-  (J _ label) -> Just label
-  (Jmp label) -> Just label
+  (J _ (X64Op_I (IROp_I label))) -> Just label
+  (Jmp (X64Op_I (IROp_I label@(LAddr _)))) -> Just label
   _ -> Nothing
 
 mightFallThrough :: Insn -> Bool

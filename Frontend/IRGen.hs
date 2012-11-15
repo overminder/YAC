@@ -1,5 +1,5 @@
 module Frontend.IRGen (
-  IRGen(..),
+  IRGen,
   ToplevelDef(..),
   gen
 ) where
@@ -70,10 +70,11 @@ gen :: Cell -> TempGen [ToplevelDef]
 gen c = liftM defs $ execStateT (gen' c) empty
 
 gen' :: Cell -> IRGen ()
-gen' (List cs) = do
-  forM_ cs $ \c -> do
-    def <- genToplevel c
+gen' c = case c of
+  (List xs) -> forM_ xs $ \x -> do
+    def <- genToplevel x
     putDef def
+  _ -> error $ "IRGen.gen': " ++ show c
 
 genToplevel :: Cell -> IRGen ToplevelDef
 genToplevel c = case c of
@@ -90,16 +91,18 @@ genToplevel c = case c of
 
 defineFormalArgs :: Cell -> IRGen [Reg]
 defineFormalArgs c = case c of
-  (List xs) -> forM xs $ \(Symbol s) -> do
-    shouldBeNothing <- lookupSymbol s
-    case shouldBeNothing of
-      Nothing -> memorizeSymbol s
-      (Just _) -> error $ "IRGen.defineFormalArgs: redefination of " ++ s
+  (List xs) -> forM xs $ \x -> case x of
+      (Symbol s) -> do
+        shouldBeNothing <- lookupSymbol s
+        case shouldBeNothing of
+          Nothing -> memorizeSymbol s
+          (Just _) -> error $ "IRGen.defineFormalArgs: redefination of " ++ s
+      _ -> error $ "IRGen.defineFormalArgs: not a symbol: " ++ show xs
   _ -> error $ "IRGen.getFormalRegs: illegal args: " ++ show c
 
 genWith :: Cell -> IRGen Tree
 genWith c = case c of
-  (Fixnum i) -> return $ T.Leaf $ IROp_I i
+  (Fixnum i) -> return $ T.Leaf $ IROp_I $ IVal i
   (Symbol name) -> do
     maybeReg <- lookupSymbol name
     case maybeReg of
@@ -108,12 +111,13 @@ genWith c = case c of
   (List xs) -> case xs of
     [] -> error "Unexpected nil in source code: ()"
     _ -> genWithList xs
+  _ -> error $ "IRGen.genWith: " ++ show c
 
 genWithList :: [Cell] -> IRGen Tree
 genWithList c = case c of
   -- (+ ...)
   ((Symbol "+"):xs) -> case xs of
-    [] -> return $ T.Leaf (IROp_I 0)
+    [] -> return $ T.Leaf (IROp_I (IVal 0))
     [x] -> genWith x
     _ -> do
       (t0:t1:ts) <- mapM genWith xs
@@ -123,10 +127,10 @@ genWithList c = case c of
     [] -> error $ "empty " ++ show c
     [x] -> do
       t <- genWith x
-      return $ T.Sub (T.Leaf $ IROp_I 0) t
-    (x:xs) -> do
-      t <- genWith x
-      ts <- mapM genWith xs
+      return $ T.Sub (T.Leaf $ IROp_I $ IVal 0) t
+    (y:ys) -> do
+      t <- genWith y
+      ts <- mapM genWith ys
       return $ foldl T.Sub t ts
 
   [Symbol "<", lhs, rhs] -> do
@@ -134,19 +138,26 @@ genWithList c = case c of
     rhsTree <- genWith rhs
     return $ T.Compare lhsTree rhsTree T.Lt
 
+  [Symbol "%symbol-addr", Symbol name] -> do
+    return $ T.Leaf $ IROp_I $ LAddr name
+
+  [Symbol "%symbol-val", Symbol name] -> do
+    return $ T.Leaf $ IROp_I $ LVal name
+
   -- (define name expr)
   lst@[Symbol "define", Symbol name, expr] -> do
     maybeReg <- lookupSymbol name
     case maybeReg of
-      Just reg -> error ("Redefining variable at #define: "
-                         ++ (show $ List lst))
+      Just _ -> error ("Redefining variable at #define: "
+                       ++ (show $ List lst))
       Nothing -> do
         exprTree <- genWith expr
         reg <- memorizeSymbol name
         return $ T.Move (T.Leaf $ IROp_R reg) exprTree
 
-  [Symbol "if", pred, thenExpr, elseExpr] -> do
-    [predTree, thenTree, elseTree] <- mapM genWith [pred, thenExpr, elseExpr]
+  [Symbol "if", predExpr, thenExpr, elseExpr] -> do
+    [predTree, thenTree, elseTree] <- mapM genWith
+                                           [predExpr, thenExpr, elseExpr]
     return $ T.If predTree thenTree elseTree
 
   -- (set! name expr)
@@ -164,14 +175,26 @@ genWithList c = case c of
     return $ T.fromList trees
 
   -- (funcall name args)
-  (Symbol "funcall":Symbol name:args) -> do
+  (Symbol "%funcall":Symbol name:args) -> do
     argTrees <- mapM genWith args
-    return $ T.Call (T.Leaf $ IROp_L name) argTrees T.NormalCall
+    return $ T.Call (T.Leaf $ IROp_I $ LAddr name) argTrees T.NormalCall
 
   -- (funcall/t name args)
-  (Symbol "funcall/t":Symbol name:args) -> do
+  (Symbol "%funcall/t":Symbol name:args) -> do
     argTrees <- mapM genWith args
-    return $ T.Call (T.Leaf $ IROp_L name) argTrees T.TailCall
+    return $ T.Call (T.Leaf $ IROp_I $ LAddr name) argTrees T.TailCall
+
+  -- (funcall/r expr args)
+  (Symbol "%funcall/r":expr:args) -> do
+    argTrees <- mapM genWith args
+    funcTree <- genWith expr
+    return $ T.Call funcTree argTrees T.NormalCall
+
+  -- (funcall/rt expr args)
+  (Symbol "%funcall/rt":expr:args) -> do
+    argTrees <- mapM genWith args
+    funcTree <- genWith expr
+    return $ T.Call funcTree argTrees T.TailCall
 
   -- otherwise
   xs@_ -> error $ "Unexpected form: " ++ show (List xs)

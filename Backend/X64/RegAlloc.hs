@@ -64,7 +64,7 @@ alloc' insnList = do
 -- Replaces virtual registers in insn and adds spilling instructions if needed.
 -- XXX Also does dead-code elimination when possible.
 materialize :: DFInsn -> AllocGen [Insn]
-materialize (DFInsn insn du lv) = do
+materialize (DFInsn insn du _) = do
   regMap <- lift $ liftM F.vRegUses get
   let use' = excludeMReg $ getUse du
       def' = excludeMReg $ getDef du
@@ -88,9 +88,9 @@ materialize (DFInsn insn du lv) = do
         let (F.InStack loc) = getItem r
         tempReg <- lift F.allocTempReg
         let loadInsn = Mov (X64Op_I (IROp_R tempReg))
-                           (X64Op_M (Address rbp Nothing Scale1 loc))
+                           (X64Op_M (Address rbp Nothing Scale1 (IVal loc)))
                            NormalMov
-            storeInsn = Mov (X64Op_M (Address rbp Nothing Scale1 loc))
+            storeInsn = Mov (X64Op_M (Address rbp Nothing Scale1 (IVal loc)))
                             (X64Op_I (IROp_R tempReg))
                             NormalMov
         return (r, (tempReg, loadInsn, storeInsn))
@@ -106,7 +106,8 @@ materialize (DFInsn insn du lv) = do
               (Just mRegInfo) -> chooseTemp mRegInfo
               Nothing -> case Map.lookup vReg regMap of
                 (Just (F.InReg mReg)) -> mReg
-                _ -> error "RegAlloc.materialize: Internal Error"
+                _ -> error $ "RegAlloc.materialize: cannot find mReg for " ++
+                             show reg
       
       lift F.restoreTempRegs
       return $ loads ++ [replaceVReg mRegForVReg insn] ++ stores
@@ -118,7 +119,7 @@ expireOldIntervals val = do
 
 expireOldIntervals' :: [Interval] -> Interval -> AllocGen ()
 expireOldIntervals' [] _ = return ()
-expireOldIntervals' (j@(jReg, jStart, jEnd):vs) i@(iReg, iStart, iEnd) = do
+expireOldIntervals' (j@(jReg, _, jEnd):vs) i@(_, iStart, _) = do
   if (jEnd >= iStart) {- Different from poletto (he uses >):
                          our live range overlaps. -}
     then return () -- we are done
@@ -132,8 +133,8 @@ getLastInterval :: AllocGen Interval
 getLastInterval = liftM (last . activeIntervals) get
 
 spillAtInterval :: Interval -> AllocGen ()
-spillAtInterval iVal@(iReg, iStart, iEnd) = do
-  spill@(sReg, sStart, sEnd) <- getLastInterval
+spillAtInterval iVal@(iReg, _, iEnd) = do
+  spill@(sReg, _, sEnd) <- getLastInterval
   if sEnd > iEnd
     then do
       (F.InReg r) <- lift $ F.getStorageType sReg
@@ -150,9 +151,6 @@ spillAtInterval iVal@(iReg, iStart, iEnd) = do
 -- Internally used for live range calculating
 type LiveMap = Map Reg (Int, Int)
 
--- (VReg, MReg)
-type ActiveReg = (Reg, Reg)
-
 compareInterval :: Interval -> Interval -> Ordering
 compareInterval (_, f0, _) (_, f1, _) = compare f0 f1
 
@@ -167,13 +165,13 @@ getLiveRange :: [Liveness] -> LiveMap
 getLiveRange lvs = foldl addInterval Map.empty (zip [0..] lvs)
   where
     addInterval :: LiveMap -> (Int, Liveness) -> LiveMap
-    addInterval lvMap (idx, Liveness lvIn lvOut) = newLvMap
+    addInterval origLvMap (idx, Liveness _ lvOut) = newLvMap
       where
-        newLvMap = foldr combine lvMap lvOut
+        newLvMap = foldr combine origLvMap lvOut
         combine reg lvMap = case reg of
           -- Need to exclude MReg here
           (MReg _) -> lvMap
           (VReg _) -> case Map.lookup reg lvMap of
-            (Just (frm, to)) -> Map.insert reg (frm, idx) lvMap
+            (Just (frm, to)) -> Map.insert reg (frm, max idx to) lvMap
             Nothing -> Map.insert reg (idx, idx) lvMap
 

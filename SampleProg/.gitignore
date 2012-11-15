@@ -1,3 +1,4 @@
 test.S
 a.out
 *.gen.ss
+*.pyc

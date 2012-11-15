@@ -94,14 +94,14 @@ callerArgOps :: [X64Op]
 callerArgOps = map (X64Op_I . IROp_R) argRegs ++ stackArgGen
   where
     stackArgGen = map (X64Op_M . nthStackArg) [0..]
-    nthStackArg nth = Address rsp Nothing Scale1 (wordSize * nth)
+    nthStackArg nth = Address rsp Nothing Scale1 (IVal (wordSize * nth))
 
 calleeArgOps :: Int -> [X64Op]
 calleeArgOps nSaves = map (X64Op_I . IROp_R) argRegs ++ frameArgGen
   where
     frameArgGen = map (X64Op_M . nthFrameArg) [0..]
     nthFrameArg nth = Address rbp Nothing Scale1
-                              (wordSize * (1 + nth + nSaves))
+                              (IVal (wordSize * (1 + nth + nSaves)))
 
 empty :: Frame
 empty = Frame {
@@ -220,7 +220,7 @@ insertProAndEpilogue insnList = do
                               (X64Op_I (IROp_R rsp)) NormalMov]
             frameAdjInsns = if spaceNeeded /= 0
                               then [Sub (X64Op_I (IROp_R rsp))
-                                        (X64Op_I (IROp_I spaceNeeded))]
+                                        (X64Op_I (IROp_I (IVal spaceNeeded)))]
                               else []
         return $ saveInsns ++ enterInsns ++ frameAdjInsns
       (PInsn InsertEpilogue) -> do
@@ -253,9 +253,10 @@ patchCalleeMovArg insnList = do
   let nSaves = 1 + length calleeSaveUses -- including rbp
   forM insnList $ \insn -> do
     case insn of
-      (Mov dest (X64Op_M (Address base index scale disp)) CalleeMovArg) -> do
+      (Mov dest (X64Op_M (Address base index scale (IVal disp)))
+           CalleeMovArg) -> do
         let newDisp = disp + wordSize * nSaves
-        return $ Mov dest (X64Op_M (Address base index scale newDisp))
+        return $ Mov dest (X64Op_M (Address base index scale (IVal newDisp)))
                      CalleeMovArg
       _ -> return insn
 
