@@ -55,7 +55,7 @@ instance Show Address where
         (IVal i) -> case i of
           0 -> ""
           _ -> show i
-        (LVal s) -> s
+        (LAddr s) -> s
         _ -> error $ "X64.Insn.showDisp: wrong disp: " ++ show imm
 
       showScale :: Scale -> String
@@ -88,6 +88,7 @@ class GasSyntax a where
 
 data Insn = Add X64Op X64Op
           | Sub X64Op X64Op
+          | Sal X64Op X64Op
           | Call X64Op
           | Cmp X64Op X64Op
           | J Cond X64Op
@@ -116,6 +117,7 @@ instance Show Insn where
   show insn = case insn of
     (Add dest src) -> formatInsn "add" [show dest, show src]
     (Sub dest src) -> formatInsn "sub" [show dest, show src]
+    (Sal dest src) -> formatInsn "sal" [show dest, show src]
     (Call dest) -> formatInsn "call" [showJumpTarget dest]
     (Cmp lhs rhs) -> formatInsn "cmp" [show lhs, show rhs]
     (J cond label) -> formatInsn ("j" ++ showCond cond) [showJumpTarget label]
@@ -132,6 +134,7 @@ instance GasSyntax Insn where
   gasShow insn = case insn of
     (Add dest src) -> formatInsn "add" [show src, show dest]
     (Sub dest src) -> formatInsn "sub" [show src, show dest]
+    (Sal dest src) -> formatInsn "sal" [show src, show dest]
     (Call dest) -> formatInsn "call" [showJumpTarget dest]
     (Cmp lhs rhs) -> formatInsn "cmp" [show rhs, show lhs]
     (J cond label) -> formatInsn ("j" ++ showCond cond) [showJumpTarget label]
@@ -159,6 +162,7 @@ opsOfInsn :: Insn -> [X64Op]
 opsOfInsn insn = case insn of
   (Add op0 op1) -> [op0, op1]
   (Sub op0 op1) -> [op0, op1]
+  (Sal op0 op1) -> [op0, op1]
   (Call op0)    -> [op0]
   (Cmp op0 op1) -> [op0, op1]
   (Jmp op0)     -> [op0]
@@ -177,6 +181,7 @@ setOpsOfInsn :: [X64Op] -> Insn -> Insn
 setOpsOfInsn ops insn = case (ops, insn) of
   ([op0, op1], (Add _ _)) -> Add op0 op1
   ([op0, op1], (Sub _ _)) -> Sub op0 op1
+  ([op0, op1], (Sal _ _)) -> Sal op0 op1
   ([op0]     , (Call _) ) -> Call op0
   ([op0, op1], (Cmp _ _)) -> Cmp op0 op1
   ([op0]     , (Jmp _)  ) -> Jmp op0

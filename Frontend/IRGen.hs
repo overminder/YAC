@@ -196,6 +196,22 @@ genWithList c = case c of
     funcTree <- genWith expr
     return $ T.Call funcTree argTrees T.TailCall
 
+  [Symbol "%set-quad!", ptr, offset, val] -> do
+    ptrTree <- genWith ptr
+    offTree <- genWith offset
+    valTree <- genWith val
+    return $ T.Move (T.Deref ptrTree) (T.Add offTree valTree)
+
+  [Symbol "%get-quad", ptr, offset] -> do
+    ptrTree <- genWith ptr
+    offTree <- genWith offset
+    return $ T.Deref (T.Add ptrTree offTree)
+
+  [Symbol "%sal", lhs, rhs] -> do
+    lTree <- genWith lhs
+    rTree <- genWith rhs
+    return $ T.ShiftArithLeft lTree rTree
+
   -- otherwise
   xs@_ -> error $ "Unexpected form: " ++ show (List xs)
 

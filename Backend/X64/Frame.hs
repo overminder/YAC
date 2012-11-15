@@ -76,8 +76,8 @@ argRegs = [rdi, rsi, rdx, rcx, r8, r9]
 
 calleeSaveRegs = [rbp, rbx, r12, r13, r14, r15]
 isCalleeSave r = r `elem` calleeSaveRegs
--- rsp is treated differently
-isCallerSave r = (not $ isCalleeSave r) && r /= rsp
+-- rsp and rip are treated differently
+isCallerSave r = (not $ isCalleeSave r) && r `notElem` [rsp, rip]
 
 usableRegs = useMore ++ useLess
   where
@@ -264,6 +264,8 @@ formatOutput :: GasSyntax a => [a] -> FrameGen String
 formatOutput insnList =
   let writeLn s = tell s >> tell "\n"
    in execWriterT $ do
+        writeLn ".text"
+        writeLn ".align 8"
         funcName <- lift $ liftM name get
         writeLn $ ".global " ++ funcName
         writeLn $ funcName ++ ":"

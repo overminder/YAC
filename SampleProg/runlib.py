@@ -24,11 +24,16 @@ def hs_compile(name_in, name_out):
         f.write(out)
 
 def gcc_compile(files_in, name_out='a.out', flags=[]):
-    Popen(['gcc', '-o', name_out] + flags + files_in).communicate()
+    p = Popen(['gcc', '-o', name_out] + flags + files_in)
+    _, err = p.communicate()
+    if err:
+        raise CompileError(err)
 
 def native_run(name):
-    p = Popen(['./a.out'], stdout=PIPE)
-    out, _ = p.communicate()
+    p = Popen(['./a.out'], stdout=PIPE, stderr=PIPE)
+    out, err = p.communicate()
+    if err:
+        raise RuntimeError(err)
     return out
 
 def csi_run(file_name):

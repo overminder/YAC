@@ -6,6 +6,7 @@ import Control.Monad.State
 import Control.Monad.Writer
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Bits
 
 import Backend.IR.IROp
 import qualified Backend.IR.Tree as T
@@ -102,6 +103,37 @@ munchTree t = case t of
         emitInsn $ Sub tempReg r1
         return $ Just tempReg
 
+  (T.ShiftArithLeft t0 t1) -> do
+    (Just rand0) <- munchTree t0
+    (Just rand1) <- munchTree t1
+    munchSal rand0 rand1
+    where
+      munchSal (X64Op_I (IROp_I (IVal i0)))
+               (X64Op_I (IROp_I (IVal i1))) = do
+        return $ Just $ X64Op_I $ IROp_I $ IVal (i0 `shift` i1)
+
+      munchSal r0@(X64Op_I (IROp_R _))
+               i0@(X64Op_I (IROp_I (IVal _))) = do
+        -- uses munchAdd
+        vReg <- newVReg
+        emitInsn $ Mov vReg r0 NormalMov
+        emitInsn $ Sal vReg i0
+        return $ Just vReg
+
+      munchSal i0@(X64Op_I (IROp_I _))
+               r0@(X64Op_I (IROp_R _)) = do
+        vReg <- newVReg
+        emitInsn $ Mov vReg i0 NormalMov
+        emitInsn $ Sal vReg r0
+        return $ Just vReg
+
+      munchSal r0@(X64Op_I (IROp_R _))
+               r1@(X64Op_I (IROp_R _)) = do
+        vReg <- newVReg
+        emitInsn $ Mov vReg r0 NormalMov
+        emitInsn $ Sal vReg r1
+        return $ Just vReg
+
   (T.Move (T.Leaf r0@(IROp_R _)) (T.Add t1 t2)) -> do
     (Just rand1) <- munchTree t1
     (Just rand2) <- munchTree t2
@@ -124,7 +156,8 @@ munchTree t = case t of
 
       munchMoveAdd (X64Op_I (IROp_I (IVal i1)))
                    (X64Op_I (IROp_I (IVal i2))) = do
-        emitInsn $ Mov (X64Op_I r0) (X64Op_I (IROp_I $ IVal (i1 + i2))) NormalMov
+        emitInsn $ Mov (X64Op_I r0)
+                       (X64Op_I (IROp_I $ IVal (i1 + i2))) NormalMov
 
   (T.Move (T.Leaf r0@(IROp_R _)) t1) -> do
     (Just rand1) <- munchTree t1
@@ -139,17 +172,19 @@ munchTree t = case t of
     where
       munchMove (X64Op_I (IROp_R r0))
                 r1@(X64Op_I (IROp_R _)) = do
-        emitInsn $ Mov (X64Op_M (Address r0 Nothing Scale1 (IVal 0))) r1 NormalMov
+        emitInsn $ Mov (X64Op_M (Address r0 Nothing Scale1 (IVal 0)))
+                       r1 NormalMov
       munchMove (X64Op_I (IROp_R r0))
                 i0@(X64Op_I (IROp_I (IVal ival))) = do
-        if isInt32 ival
-          then do
-            emitInsn $ Mov (X64Op_M (Address r0 Nothing Scale1 (IVal 0))) i0 NormalMov
-          else do
-            tempReg <- newVReg
-            emitInsn $ Mov tempReg i0 NormalMov
-            emitInsn $ Mov (X64Op_M (Address r0 Nothing Scale1 (IVal 0)))
-                           tempReg NormalMov
+        --if isInt32 ival
+        --  then do
+        --    emitInsn $ Mov (X64Op_M (Address r0 Nothing Scale1 (IVal 0)))
+        --                   i0 NormalMov
+        --  else do
+        tempReg <- newVReg
+        emitInsn $ Mov tempReg i0 NormalMov
+        emitInsn $ Mov (X64Op_M (Address r0 Nothing Scale1 (IVal 0)))
+                       tempReg NormalMov
 
   (T.Deref t) -> do
     (Just rand) <- munchTree t
@@ -157,7 +192,8 @@ munchTree t = case t of
     where
       munchDeref (X64Op_I (IROp_R r)) = do
         tempReg <- newVReg
-        emitInsn $ Mov tempReg (X64Op_M (Address r Nothing Scale1 (IVal 0))) NormalMov
+        emitInsn $ Mov tempReg (X64Op_M (Address r Nothing Scale1 (IVal 0)))
+                       NormalMov
         return (Just tempReg)
 
   -- using (if (cmp ...) ...)
@@ -196,8 +232,20 @@ munchTree t = case t of
       T.Nop -> return r0
       _ -> munchTree t1
 
-  (T.Leaf op) -> do
-    return $ Just $ X64Op_I op
+  (T.Leaf op) -> case op of
+    (IROp_I imm) -> case imm of
+      (IVal _) -> return $ Just $ X64Op_I op
+      (LAddr name) -> do
+        vReg <- newVReg
+        emitInsn $ Lea vReg $ X64Op_M (Address rip Nothing Scale1 imm)
+        return $ Just vReg
+      (LVal name) -> do
+        vReg <- newVReg
+        emitInsn $ Mov vReg (X64Op_M (Address rip Nothing Scale1 (LAddr name)))
+                       NormalMov
+        return $ Just vReg
+      _ -> error $ "Munch.munchTree: " ++ show t
+    (IROp_R reg) -> return $ Just $ X64Op_I op
 
   (T.Call funcTree argTrees tailp) -> do
     -- Firstly evaluate all args
@@ -244,6 +292,8 @@ munchTree t = case t of
 
   T.Nop -> error "not reached"
 
+  _ -> error $ "Munch.munchTree: " ++ show t
+
 ensureReg :: X64Op -> MunchGen X64Op
 ensureReg op = case op of
   (X64Op_I (IROp_R _)) -> return op
@@ -257,12 +307,12 @@ ensureReg op = case op of
     return vReg
 
 -- Helpers
-i32Max :: Int
-i32Max = floor $ 2 ** (31 :: Double) - 1
-
-i32Min :: Int
-i32Min = floor $ - 2 ** (31 :: Double)
-
-isInt32 :: Int -> Bool
-isInt32 i = i32Min <= i && i <= i32Max
+--i32Max :: Int
+--i32Max = floor $ 2 ** (31 :: Double) - 1
+--
+--i32Min :: Int
+--i32Min = floor $ - 2 ** (31 :: Double)
+--
+--isInt32 :: Int -> Bool
+--isInt32 i = i32Min <= i && i <= i32Max
 

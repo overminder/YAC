@@ -60,6 +60,7 @@ mkDefUse' :: Insn -> DefUse
 mkDefUse' insn = case insn of
   (Add dest src) -> getDefUse [dest] [dest, src]
   (Sub dest src) -> getDefUse [dest] [dest, src]
+  (Sal dest src) -> getDefUse [dest] [dest, src]
   (Call dest) -> getDefUse [] [dest]
   (Cmp lhs rhs) -> getDefUse [] [lhs, rhs]
   (Jmp dest) -> getDefUse [] [dest]

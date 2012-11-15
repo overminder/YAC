@@ -1,6 +1,10 @@
 (define main
-  (lambda ()
-    (%funcall putInt (%funcall fibo 40))
+  (lambda (argc argv)
+    (define n 0)
+    (set! n (if (< argc 2)
+	        20
+	        (%funcall atoi (%get-quad argv 8))))
+    (%funcall putInt (%funcall fibo n))
     0))
 
 (define fibo

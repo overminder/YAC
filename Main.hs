@@ -1,6 +1,7 @@
 module Main where
 
 import Control.Monad
+import Control.Monad.Writer
 import qualified Data.List as List
 
 import Backend.IR.Temp
@@ -44,12 +45,21 @@ visualize1 prog = do
               insns1 <- F.insertCallerSave flowInsns'
               insns2 <- F.patchCalleeMovArg insns1
               finalOutput <- F.formatOutput insns2
-              -- let outputs = [showMany rawInsns,
-              --                showMany flowInsns,
-              --                finalOutput]
-              --return $ List.intercalate "------\n\n" outputs
+              --let outputs = [show tree,
+              --               showMany rawInsns,
+              --               showMany flowInsns,
+              --               finalOutput]
+              --return $ List.intercalate "\n------\n" outputs
               return finalOutput
-            _ -> error $ "Toplevel form not supported: " ++ show d
+            (IRGen.VarDef name maybeVal) -> execWriterT $ do
+              let writeLn s = tell s >> tell "\n"
+              writeLn ".data"
+              writeLn ".align 8"
+              writeLn $ name ++ ":"
+              writeLn $ ".quad " ++ case maybeVal of
+                (Just i) -> show i
+                Nothing -> "0"
+
   mapM_ putStrLn output
 
 main :: IO ()
