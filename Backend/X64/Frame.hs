@@ -76,7 +76,8 @@ argRegs = [rdi, rsi, rdx, rcx, r8, r9]
 
 calleeSaveRegs = [rbp, rbx, r12, r13, r14, r15]
 isCalleeSave r = r `elem` calleeSaveRegs
-isCallerSave r = not $ isCalleeSave r
+-- rsp is treated differently
+isCallerSave r = (not $ isCalleeSave r) && r /= rsp
 
 usableRegs = useMore ++ useLess
   where

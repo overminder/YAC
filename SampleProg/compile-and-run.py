@@ -44,6 +44,7 @@ with timeit('csi-run'):
     (define (putInt i)
       (display i)
       (newline))
+    (define (get7thArg a b c d e f g) g)
     %s
     (main)
     ''' % src)
