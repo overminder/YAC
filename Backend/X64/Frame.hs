@@ -4,6 +4,7 @@ module Backend.X64.Frame (
   runFrameGen,
   insertProAndEpilogue,
   insertCallerSave,
+  patchCalleeMovArg,
   formatOutput,
 
   nextTemp,
@@ -16,12 +17,15 @@ module Backend.X64.Frame (
   restoreTempRegs,
   setFuncName,
   setFuncArgs,
+  recordCallArgCount,
 
   StorageType(..),
   isInStack,
 
   wordSize,
-  argOps,
+  argRegs,
+  callerArgOps,
+  calleeArgOps,
   regCount,
 ) where
 
@@ -44,7 +48,8 @@ data Frame = Frame {
   mRegUses :: [Reg],
   freeRegs :: [Reg],
   tempRegs :: [Reg],
-  funcArgs :: [Reg]
+  funcArgs :: [Reg],
+  mostCallArgCount :: Int
 }
 
 type FrameGen = StateT Frame Temp.TempGen
@@ -84,11 +89,18 @@ regCount = length usableRegs
 wordSize :: Int
 wordSize = 8
 
-argOps :: [X64Op]
-argOps = map (X64Op_I . IROp_R) argRegs ++ stackArgGen
+callerArgOps :: [X64Op]
+callerArgOps = map (X64Op_I . IROp_R) argRegs ++ stackArgGen
   where
     stackArgGen = map (X64Op_M . nthStackArg) [0..]
-    nthStackArg n = Address rsp Nothing Scale1 (wordSize * n)
+    nthStackArg nth = Address rsp Nothing Scale1 (wordSize * nth)
+
+calleeArgOps :: Int -> [X64Op]
+calleeArgOps nSaves = map (X64Op_I . IROp_R) argRegs ++ frameArgGen
+  where
+    frameArgGen = map (X64Op_M . nthFrameArg) [0..]
+    nthFrameArg nth = Address rbp Nothing Scale1
+                              (wordSize * (1 + nth + nSaves))
 
 empty :: Frame
 empty = Frame {
@@ -99,7 +111,8 @@ empty = Frame {
   mRegUses = [],
   freeRegs = usableRegs,
   tempRegs = scratchRegs,
-  funcArgs = []
+  funcArgs = [],
+  mostCallArgCount = 0
 }
 
 nextTemp :: FrameGen Int
@@ -178,29 +191,44 @@ restoreTempRegs = do
     tempRegs = scratchRegs
   }
 
+recordCallArgCount :: Int -> FrameGen ()
+recordCallArgCount i = modify $ \st -> st {
+  mostCallArgCount = max (mostCallArgCount st) i
+}
+
+getMostCallArgCount :: FrameGen Int
+getMostCallArgCount = liftM mostCallArgCount get
+
+-- patches
+
 insertProAndEpilogue :: [Insn] -> FrameGen [Insn]
 insertProAndEpilogue insnList = do
+  calleeSaveUses <- liftM (filter isCalleeSave . mRegUses) get
   liftM concat $ forM insnList $ \insn -> do
     case insn of
       (PInsn InsertPrologue) -> do
-        spaceNeeded <- liftM frameSize get
-        mRegs <- liftM mRegUses get
-        let saveInsns = map (Push . X64Op_I . IROp_R)
-                            (filter isCalleeSave mRegs)
+        frameSizeNeeded <- liftM frameSize get
+        argStackNeeded <- liftM (\x -> wordSize * if x > length argRegs
+                                                    then x - length argRegs
+                                                    else 0)
+                                getMostCallArgCount
+        let spaceNeeded = frameSizeNeeded + argStackNeeded
+        let saveInsns = map (Push . X64Op_I . IROp_R) calleeSaveUses
             enterInsns = [Push (X64Op_I (IROp_R rbp)),
-                          Mov (X64Op_I (IROp_R rbp)) (X64Op_I (IROp_R rsp))]
+                          Mov (X64Op_I (IROp_R rbp))
+                              (X64Op_I (IROp_R rsp)) NormalMov]
             frameAdjInsns = if spaceNeeded /= 0
                               then [Sub (X64Op_I (IROp_R rsp))
                                         (X64Op_I (IROp_I spaceNeeded))]
                               else []
-        return $ enterInsns ++ frameAdjInsns ++ saveInsns
+        return $ saveInsns ++ enterInsns ++ frameAdjInsns
       (PInsn InsertEpilogue) -> do
-        mRegs <- liftM mRegUses get
         let restoreInsns = map (Pop . X64Op_I . IROp_R)
-                               (reverse $ filter isCalleeSave mRegs)
-            leaveInsns = [Mov (X64Op_I (IROp_R rsp)) (X64Op_I (IROp_R rbp)),
+                               (reverse calleeSaveUses)
+            leaveInsns = [Mov (X64Op_I (IROp_R rsp))
+                              (X64Op_I (IROp_R rbp)) NormalMov,
                           Pop (X64Op_I (IROp_R rbp))]
-        return $ restoreInsns ++ leaveInsns
+        return $ leaveInsns ++ restoreInsns
       _ -> return [insn]
 
 -- TODO: improve the algorithm
@@ -217,6 +245,18 @@ insertCallerSave insnList = do
             restoreInsns = map (Pop . X64Op_I . IROp_R) (reverse callerSaves)
         return $ saveInsns ++ [insn] ++ restoreInsns
       _ -> return [insn]
+
+patchCalleeMovArg :: [Insn] -> FrameGen [Insn]
+patchCalleeMovArg insnList = do
+  calleeSaveUses <- liftM (filter isCalleeSave . mRegUses) get
+  let nSaves = 1 + length calleeSaveUses -- including rbp
+  forM insnList $ \insn -> do
+    case insn of
+      (Mov dest (X64Op_M (Address base index scale disp)) CalleeMovArg) -> do
+        let newDisp = disp + wordSize * nSaves
+        return $ Mov dest (X64Op_M (Address base index scale newDisp))
+                     CalleeMovArg
+      _ -> return insn
 
 formatOutput :: GasSyntax a => [a] -> FrameGen String
 formatOutput insnList =

@@ -89,8 +89,10 @@ materialize (DFInsn insn du lv) = do
         tempReg <- lift F.allocTempReg
         let loadInsn = Mov (X64Op_I (IROp_R tempReg))
                            (X64Op_M (Address rbp Nothing Scale1 loc))
+                           NormalMov
             storeInsn = Mov (X64Op_M (Address rbp Nothing Scale1 loc))
                             (X64Op_I (IROp_R tempReg))
+                            NormalMov
         return (r, (tempReg, loadInsn, storeInsn))
       --
       let loads = map (\r -> chooseLoad (tempMap Map.! r)) loadRegs

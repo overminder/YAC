@@ -62,7 +62,7 @@ mkDefUse' insn = case insn of
   (Sub dest src) -> getDefUse [dest] [dest, src]
   (Cmp lhs rhs) -> getDefUse [] [lhs, rhs]
   (Lea dest src) -> getDefUse [dest] [src]
-  (Mov dest src) -> getDefUse [dest] [src]
+  (Mov dest src _) -> getDefUse [dest] [src]
   (Push src) -> getDefUse [] [src]
   (Pop dest) -> getDefUse [dest] []
   _ -> emptyDefUse

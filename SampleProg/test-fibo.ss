@@ -1,6 +1,7 @@
 (define main
   (lambda ()
-    (funcall putInt (funcall fibo 40))))
+    (funcall putInt (funcall fibo 30))
+    0))
 
 (define fibo
   (lambda (n)

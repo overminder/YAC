@@ -4,6 +4,7 @@ module Backend.X64.Insn (
   X64Op(..),
   Label(..),
   Insn(..),
+  MovType(..),
   PseudoInsn(..),
   GasSyntax(..),
   allRegs,
@@ -98,12 +99,16 @@ data Insn = Add X64Op X64Op
           | J Cond Label
           | Jmp Label
           | Lea X64Op X64Op
-          | Mov X64Op X64Op
+          | Mov X64Op X64Op MovType
           | Push X64Op
           | Pop X64Op
           | Ret
           | PInsn PseudoInsn
           | BindLabel Label
+  deriving (Eq)
+
+data MovType = NormalMov
+             | CalleeMovArg
   deriving (Eq)
 
 data PseudoInsn = InsertPrologue
@@ -122,7 +127,7 @@ instance Show Insn where
     (J cond label) -> formatInsn ("j" ++ showCond cond) [unLabel label]
     (Jmp label) -> formatInsn "jmp" [unLabel label]
     (Lea dest src) -> formatInsn "lea" [show dest, show src]
-    (Mov dest src) -> formatInsn "mov" [show dest, show src]
+    (Mov dest src _) -> formatInsn "mov" [show dest, show src]
     (Push src) -> formatInsn "push" [show src]
     (Pop dest) -> formatInsn "pop" [show dest]
     (PInsn p) -> formatInsn (show p) []
@@ -138,7 +143,7 @@ instance GasSyntax Insn where
     (J cond label) -> formatInsn ("j" ++ showCond cond) [unLabel label]
     (Jmp label) -> formatInsn "jmp" [unLabel label]
     (Lea dest src) -> formatInsn "lea" [show src, show dest]
-    (Mov dest src) -> formatInsn "mov" [show src, show dest]
+    (Mov dest src _) -> formatInsn "mov" [show src, show dest]
     (Push src) -> formatInsn "push" [show src]
     (Pop dest) -> formatInsn "pop" [show dest]
     Ret -> "ret"
@@ -154,7 +159,7 @@ opsOfInsn insn = case insn of
   (Sub op0 op1) -> [op0, op1]
   (Cmp op0 op1) -> [op0, op1]
   (Lea op0 op1) -> [op0, op1]
-  (Mov op0 op1) -> [op0, op1]
+  (Mov op0 op1 _) -> [op0, op1]
   (Push op0)    -> [op0]
   (Pop op0)     -> [op0]
   _             -> []
@@ -165,7 +170,7 @@ setOpsOfInsn ops insn = case (ops, insn) of
   ([op0, op1], (Sub _ _)) -> Sub op0 op1
   ([op0, op1], (Cmp _ _)) -> Cmp op0 op1
   ([op0, op1], (Lea _ _)) -> Lea op0 op1
-  ([op0, op1], (Mov _ _)) -> Mov op0 op1
+  ([op0, op1], (Mov _ _ ty)) -> Mov op0 op1 ty
   ([op0]     , (Push _) ) -> Push op0
   ([op0]     , (Pop _)  ) -> Pop op0
   ([]        , insn@_   ) -> insn
@@ -179,7 +184,7 @@ replaceOp f op = case op of
 
 isBranchInsn :: Insn -> Bool
 isBranchInsn insn = case insn of
-  (Call _) -> True
+  --(Call _) -> True -- ??
   (J _ _) -> True
   (Jmp _) -> True
   Ret -> True

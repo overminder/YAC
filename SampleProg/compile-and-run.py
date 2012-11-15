@@ -40,6 +40,7 @@ with timeit('csi-run'):
     out, _ = p.communicate('''
     (define (funcall proc . args)
       (apply proc args))
+    (define funcall/t funcall)
     (define (putInt i)
       (display i)
       (newline))

@@ -21,7 +21,8 @@ munch' :: T.Tree -> MunchGen ()
 munch' t = do
   emitInsn $ PInsn InsertPrologue
   funcArgs <- lift $ liftM F.funcArgs get
-  emitInsns $ map (\(src, dest) -> Mov (X64Op_I $ IROp_R dest) src) (zip F.argOps funcArgs)
+  emitInsns $ map (\(src, dest) -> Mov (X64Op_I $ IROp_R dest) src CalleeMovArg)
+                  (zip (F.calleeArgOps 0) funcArgs)
   munchTree t
   return ()
 
@@ -90,14 +91,14 @@ munchTree t = case t of
       munchSub i0@(X64Op_I (IROp_I _))
                r0@(X64Op_I (IROp_R _)) = do
         tempReg <- newVReg
-        emitInsn $ Mov tempReg i0
+        emitInsn $ Mov tempReg i0 NormalMov
         emitInsn $ Sub tempReg r0
         return $ Just tempReg
 
       munchSub r0@(X64Op_I (IROp_R _))
                r1@(X64Op_I (IROp_R _)) = do
         tempReg <- newVReg
-        emitInsn $ Mov tempReg r0
+        emitInsn $ Mov tempReg r0 NormalMov
         emitInsn $ Sub tempReg r1
         return $ Just tempReg
 
@@ -123,7 +124,7 @@ munchTree t = case t of
 
       munchMoveAdd (X64Op_I (IROp_I i1))
                    (X64Op_I (IROp_I i2)) = do
-        emitInsn (Mov (X64Op_I r0) (X64Op_I (IROp_I $ i1 + i2)))
+        emitInsn $ Mov (X64Op_I r0) (X64Op_I (IROp_I $ i1 + i2)) NormalMov
 
   (T.Move (T.Leaf r0@(IROp_R _)) t1) -> do
     (Just rand1) <- munchTree t1
@@ -131,9 +132,9 @@ munchTree t = case t of
     return Nothing
     where
       munchMove i0@(X64Op_I (IROp_I _)) = do
-        emitInsn (Mov (X64Op_I r0) i0)
+        emitInsn $ Mov (X64Op_I r0) i0 NormalMov
       munchMove r1@(X64Op_I (IROp_R _)) = do
-        emitInsn (Mov (X64Op_I r0) r1)
+        emitInsn $ Mov (X64Op_I r0) r1 NormalMov
 
   (T.Move (T.Deref t0) t1) -> do
     (Just rand0) <- munchTree t0
@@ -143,16 +144,17 @@ munchTree t = case t of
     where
       munchMove (X64Op_I (IROp_R r0))
                 r1@(X64Op_I (IROp_R _)) = do
-        emitInsn (Mov (X64Op_M (Address r0 Nothing Scale1 0)) r1)
+        emitInsn $ Mov (X64Op_M (Address r0 Nothing Scale1 0)) r1 NormalMov
       munchMove (X64Op_I (IROp_R r0))
                 i0@(X64Op_I (IROp_I ival)) = do
         if isInt32 ival
           then do
-            emitInsn (Mov (X64Op_M (Address r0 Nothing Scale1 0)) i0)
+            emitInsn $ Mov (X64Op_M (Address r0 Nothing Scale1 0)) i0 NormalMov
           else do
             tempReg <- newVReg
-            emitInsn (Mov tempReg i0)
-            emitInsn (Mov (X64Op_M (Address r0 Nothing Scale1 0)) tempReg)
+            emitInsn $ Mov tempReg i0 NormalMov
+            emitInsn $ Mov (X64Op_M (Address r0 Nothing Scale1 0))
+                           tempReg NormalMov
 
   (T.Deref t) -> do
     (Just rand) <- munchTree t
@@ -160,8 +162,14 @@ munchTree t = case t of
     where
       munchDeref (X64Op_I (IROp_R r)) = do
         tempReg <- newVReg
-        emitInsn (Mov tempReg (X64Op_M (Address r Nothing Scale1 0)))
+        emitInsn $ Mov tempReg (X64Op_M (Address r Nothing Scale1 0)) NormalMov
         return (Just tempReg)
+
+  -- using (if (cmp ...) ...)
+  (T.Compare lhs rhs cond) -> do
+    let one = T.Leaf $ IROp_I 1
+        zero = T.Leaf $ IROp_I 0
+    munchTree (T.If t one zero)
 
   (T.If t0 t1 t2) -> do
     retVal@(X64Op_I retValIR) <- newVReg
@@ -198,22 +206,27 @@ munchTree t = case t of
 
   (T.Call (T.Leaf (IROp_L name)) argTrees tailp) -> do
     -- Firstly evaluate all args
-    results <- forM argTrees munchTree
+    let nArgs = length argTrees
+    lift $ F.recordCallArgCount nArgs
+    argValues <- forM argTrees munchTree
     -- Then put them into the arg pos
-    forM (zip results F.argOps) $ \(Just r, dest) -> do
+    forM (zip argValues F.callerArgOps) $ \(Just r, dest) -> do
       r <- ensureReg r
-      emitInsn $ Mov dest r
+      emitInsn $ Mov dest r NormalMov
     case tailp of
       T.NormalCall -> do
         emitInsn $ Call (StringLabel name)
         -- Save the result into a non-temp register
         vReg <- newVReg
-        emitInsn $ Mov vReg (X64Op_I $ IROp_R rax)
+        emitInsn $ Mov vReg (X64Op_I $ IROp_R rax) NormalMov
         return $ Just vReg
-      T.TailCall -> error $ "TailCall currently not supported"
-        --emitInsn $ Jmp (StringLabel name)
-        --return Nothing
-        -- return $ Just (X64Op_I $ IROp_R rax) -- Actually not reached
+      T.TailCall -> do
+        if nArgs >= length F.argRegs
+          then error $ "Munch: tailcall has too many args: " ++ show t
+          else do
+            emitInsn $ PInsn InsertEpilogue
+            emitInsn $ Jmp (StringLabel name)
+            return $ Just (X64Op_I $ IROp_R rax) -- Actually not reached
 
   (T.Return t) -> do
     munchTree (T.Move (T.Leaf (IROp_R rax)) t)
@@ -228,11 +241,11 @@ ensureReg op = case op of
   (X64Op_I (IROp_R _)) -> return op
   (X64Op_I (IROp_I val)) -> do
     vReg <- newVReg
-    emitInsn (Mov vReg op)
+    emitInsn (Mov vReg op NormalMov)
     return vReg
   (X64Op_M addr) -> do
     vReg <- newVReg
-    emitInsn (Mov vReg op)
+    emitInsn (Mov vReg op NormalMov)
     return vReg
 
 -- Helpers

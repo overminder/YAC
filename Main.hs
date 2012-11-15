@@ -44,6 +44,7 @@ visualize1 prog = do
               let (graph', niter) = iterLiveness graph 0
                   flowInsns' = toTrace graph'
               insns' <- insertCallerSave flowInsns'
+              insns' <- patchCalleeMovArg insns'
               formatOutput insns'
             _ -> error $ "Toplevel form not supported: " ++ show d
   mapM_ putStrLn output

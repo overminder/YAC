@@ -108,8 +108,9 @@ resolveDefConns = do
   defConns <- liftM gbDefConns get
   labelMap <- liftM gbLabelMap get
   forM_ defConns $ \(fromB, label) -> do
-    let (Just toB) = Map.lookup label labelMap
-    connectBlock fromB toB
+    case Map.lookup label labelMap of
+      (Just toB) -> connectBlock fromB toB
+      Nothing -> return () -- XXX: has label, no block?
 
 addToCurrBlock :: Insn -> GraphGen ()
 addToCurrBlock insn = do
