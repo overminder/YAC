@@ -2,6 +2,7 @@ module Backend.IR.Tree (
   Tree(..),
   CallType(..),
   Cond(..),
+  Direction(..),
   reverseCond,
   fromList,
   toList
@@ -19,7 +20,9 @@ data Tree = Leaf IROp
           | Seq Tree Tree
           | Add Tree Tree
           | Sub Tree Tree
-          | ShiftArithLeft Tree Tree
+          | Shift Tree Tree Direction
+          | BitAnd Tree Tree
+          | BitOr Tree Tree
           | Move Tree Tree
           | Deref Tree
           | If Tree Tree Tree
@@ -27,6 +30,9 @@ data Tree = Leaf IROp
           | Call Tree [Tree] CallType -- func arg tailp
           | Return Tree
           | Nop
+  deriving (Show, Eq)
+
+data Direction = ToLeft | ToRight
   deriving (Show, Eq)
 
 data Cond = Ge | Gt | Le | Lt | Eq | Ne

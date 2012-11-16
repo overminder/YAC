@@ -103,36 +103,53 @@ munchTree t = case t of
         emitInsn $ Sub tempReg r1
         return $ Just tempReg
 
-  (T.ShiftArithLeft t0 t1) -> do
+  (T.BitAnd t0 t1) -> do
     (Just rand0) <- munchTree t0
     (Just rand1) <- munchTree t1
-    munchSal rand0 rand1
-    where
-      munchSal (X64Op_I (IROp_I (IVal i0)))
-               (X64Op_I (IROp_I (IVal i1))) = do
-        return $ Just $ X64Op_I $ IROp_I $ IVal (i0 `shift` i1)
+    liftM Just $ munchCommonBop (.&.) And (rand0, rand1)
 
-      munchSal r0@(X64Op_I (IROp_R _))
-               i0@(X64Op_I (IROp_I (IVal _))) = do
-        -- uses munchAdd
-        vReg <- newVReg
-        emitInsn $ Mov vReg r0 NormalMov
-        emitInsn $ Sal vReg i0
-        return $ Just vReg
+  (T.BitOr t0 t1) -> do
+    (Just rand0) <- munchTree t0
+    (Just rand1) <- munchTree t1
+    liftM Just $ munchCommonBop (.|.) Or (rand0, rand1)
 
-      munchSal i0@(X64Op_I (IROp_I _))
-               r0@(X64Op_I (IROp_R _)) = do
-        vReg <- newVReg
-        emitInsn $ Mov vReg i0 NormalMov
-        emitInsn $ Sal vReg r0
-        return $ Just vReg
+  (T.Shift t0 t1 direction) -> do
+    let (foldFun, insnCon) = case direction of
+          T.ToLeft -> (shift, Sal)
+          T.ToRight -> (\i0 i1 -> i0 `shift` (-i1), Sar)
+        -- since it uses foldFun
+        munchShift (X64Op_I (IROp_I (IVal i0)))
+                   (X64Op_I (IROp_I (IVal i1))) = do
+          return $ Just $ X64Op_I $ IROp_I $ IVal (i0 `foldFun` i1)
 
-      munchSal r0@(X64Op_I (IROp_R _))
-               r1@(X64Op_I (IROp_R _)) = do
-        vReg <- newVReg
-        emitInsn $ Mov vReg r0 NormalMov
-        emitInsn $ Sal vReg r1
-        return $ Just vReg
+        munchShift r0@(X64Op_I (IROp_R _))
+                   i0@(X64Op_I (IROp_I (IVal _))) = do
+          -- uses munchAdd
+          vReg <- newVReg
+          emitInsn $ Mov vReg r0 NormalMov
+          emitInsn $ insnCon vReg i0
+          return $ Just vReg
+
+        munchShift i0@(X64Op_I (IROp_I _))
+                   r0@(X64Op_I (IROp_R _)) = do
+          vReg <- newVReg
+          emitInsn $ Mov vReg i0 NormalMov
+          emitInsn $ insnCon vReg r0
+          return $ Just vReg
+
+        munchShift r0@(X64Op_I (IROp_R _))
+                   r1@(X64Op_I (IROp_R _)) = do
+          -- Note that sal and sar require src to be a 8-bit register
+          -- we choose to reserve al.
+          vReg <- newVReg
+          emitInsn $ Mov vReg r0 NormalMov
+          emitInsn $ Mov (X64Op_I $ IROp_R rcx) r1 NormalMov
+          emitInsn $ insnCon vReg (X64Op_I $ IROp_R rcx)
+          return $ Just vReg
+    -- still munching shift insn
+    (Just rand0) <- munchTree t0
+    (Just rand1) <- munchTree t1
+    munchShift rand0 rand1
 
   (T.Move (T.Leaf r0@(IROp_R _)) (T.Add t1 t2)) -> do
     (Just rand1) <- munchTree t1
@@ -211,9 +228,29 @@ munchTree t = case t of
         (Just vlhs) <- munchTree lhs
         rlhs <- ensureReg vlhs
         (Just vrhs) <- munchTree rhs
-        rrhs <- ensureReg vrhs
-        emitInsn $ Cmp rlhs rrhs
+        --rrhs <- ensureReg vrhs
+        emitInsn $ Cmp rlhs vrhs
         emitInsn $ J (T.reverseCond cond) elseLabel
+
+      (T.BitAnd lhs rhs) -> do
+        (Just vlhs) <- munchTree lhs
+        rlhs <- ensureReg vlhs
+        (Just vrhs) <- munchTree rhs
+        --rrhs <- ensureReg vrhs
+        emitInsn $ Test rlhs vrhs
+        emitInsn $ J T.Eq elseLabel
+
+      -- destructive for the lhs.
+      (T.BitOr lhs rhs) -> do
+        (Just vlhs) <- munchTree lhs
+        rlhs <- newVReg
+        emitInsn $ Mov rlhs vlhs NormalMov
+        --rlhs <- ensureReg vlhs
+        (Just vrhs) <- munchTree rhs
+        --rrhs <- ensureReg vrhs
+        emitInsn $ Or rlhs vrhs
+        emitInsn $ J T.Eq elseLabel
+
       _ -> do
         (Just v0) <- munchTree t0
         r0 <- ensureReg v0
@@ -307,12 +344,25 @@ ensureReg op = case op of
     return vReg
 
 -- Helpers
---i32Max :: Int
---i32Max = floor $ 2 ** (31 :: Double) - 1
---
---i32Min :: Int
---i32Min = floor $ - 2 ** (31 :: Double)
---
---isInt32 :: Int -> Bool
---isInt32 i = i32Min <= i && i <= i32Max
+
+munchCommonBop :: (Int -> Int -> Int) -> (X64Op -> X64Op -> Insn) ->
+                  (X64Op, X64Op) -> MunchGen X64Op
+munchCommonBop kFold insnCon opPair = case opPair of
+  (X64Op_I (IROp_I (IVal i0)), X64Op_I (IROp_I (IVal i1))) -> do
+    return $ X64Op_I $ IROp_I $ IVal (i0 `kFold` i1)
+
+  (r0@(X64Op_I (IROp_R _)), i0@(X64Op_I (IROp_I _))) -> do
+    tempReg <- newVReg
+    emitInsn $ Mov tempReg r0 NormalMov
+    emitInsn $ insnCon tempReg i0
+    return tempReg
+
+  (i0@(X64Op_I (IROp_I _)), r0@(X64Op_I (IROp_R _))) -> do
+    munchCommonBop kFold insnCon (r0, i0)
+
+  (r0@(X64Op_I (IROp_R _)), r1@(X64Op_I (IROp_R _))) -> do
+    tempReg <- newVReg
+    emitInsn $ Mov tempReg r0 NormalMov
+    emitInsn $ insnCon tempReg r1
+    return tempReg
 

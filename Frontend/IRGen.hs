@@ -212,7 +212,22 @@ genWithList c = case c of
   [Symbol "%sal", lhs, rhs] -> do
     lTree <- genWith lhs
     rTree <- genWith rhs
-    return $ T.ShiftArithLeft lTree rTree
+    return $ T.Shift lTree rTree T.ToLeft
+
+  [Symbol "%sar", lhs, rhs] -> do
+    lTree <- genWith lhs
+    rTree <- genWith rhs
+    return $ T.Shift lTree rTree T.ToRight
+
+  [Symbol "%bitand", lhs, rhs] -> do
+    lTree <- genWith lhs
+    rTree <- genWith rhs
+    return $ T.BitAnd lTree rTree
+
+  [Symbol "%bitor", lhs, rhs] -> do
+    lTree <- genWith lhs
+    rTree <- genWith rhs
+    return $ T.BitOr lTree rTree
 
   -- otherwise
   xs@_ -> error $ "Unexpected form: " ++ show (List xs)

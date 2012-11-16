@@ -9,6 +9,9 @@
 	        dog)
     (%funcall/r (%get-quad (%get-quad cat 0) 0)
 	        cat)
+    (%funcall free dog)
+    (%funcall free cat)
+    (%funcall vtable_destroy)
     0))
 
 (define dog_vtable 0)
@@ -56,4 +59,9 @@
     (%set-quad! (%symbol-addr dog_vtable) 0 dog-vtable)
     (%set-quad! (%symbol-addr cat_vtable) 0 cat-vtable)
     0))
+
+(define vtable_destroy
+  (lambda ()
+    (%funcall free (%symbol-val dog_vtable))
+    (%funcall free (%symbol-val cat_vtable))))
 

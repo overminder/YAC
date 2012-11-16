@@ -89,8 +89,12 @@ class GasSyntax a where
 data Insn = Add X64Op X64Op
           | Sub X64Op X64Op
           | Sal X64Op X64Op
+          | Sar X64Op X64Op
           | Call X64Op
           | Cmp X64Op X64Op
+          | Test X64Op X64Op
+          | Or X64Op X64Op
+          | And X64Op X64Op
           | J Cond X64Op
           | Jmp X64Op
           | Lea X64Op X64Op
@@ -118,8 +122,12 @@ instance Show Insn where
     (Add dest src) -> formatInsn "add" [show dest, show src]
     (Sub dest src) -> formatInsn "sub" [show dest, show src]
     (Sal dest src) -> formatInsn "sal" [show dest, show src]
+    (Sar dest src) -> formatInsn "sar" [show dest, show src]
     (Call dest) -> formatInsn "call" [showJumpTarget dest]
     (Cmp lhs rhs) -> formatInsn "cmp" [show lhs, show rhs]
+    (Test lhs rhs) -> formatInsn "test" [show lhs, show rhs]
+    (Or lhs rhs) -> formatInsn "or" [show lhs, show rhs]
+    (And lhs rhs) -> formatInsn "and" [show lhs, show rhs]
     (J cond label) -> formatInsn ("j" ++ showCond cond) [showJumpTarget label]
     (Jmp dest) -> formatInsn "jmp" [showJumpTarget dest]
     (Lea dest src) -> formatInsn "lea" [show dest, show src]
@@ -134,9 +142,13 @@ instance GasSyntax Insn where
   gasShow insn = case insn of
     (Add dest src) -> formatInsn "add" [show src, show dest]
     (Sub dest src) -> formatInsn "sub" [show src, show dest]
-    (Sal dest src) -> formatInsn "sal" [show src, show dest]
+    (Sal dest src) -> formatInsn "sal" [showAs8bit src, show dest]
+    (Sar dest src) -> formatInsn "sar" [showAs8bit src, show dest]
     (Call dest) -> formatInsn "call" [showJumpTarget dest]
     (Cmp lhs rhs) -> formatInsn "cmp" [show rhs, show lhs]
+    (Test lhs rhs) -> formatInsn "test" [show rhs, show lhs]
+    (Or lhs rhs) -> formatInsn "or" [show rhs, show lhs]
+    (And lhs rhs) -> formatInsn "and" [show rhs, show lhs]
     (J cond label) -> formatInsn ("j" ++ showCond cond) [showJumpTarget label]
     (Jmp dest) -> formatInsn "jmp" [showJumpTarget dest]
     (Lea dest src) -> formatInsn "lea" [show src, show dest]
@@ -146,6 +158,11 @@ instance GasSyntax Insn where
     Ret -> "ret"
     (BindLabel label) -> showJumpTarget label ++ ":"
     _ -> show insn
+
+showAs8bit :: X64Op -> String
+showAs8bit op = case op of
+  (X64Op_I (IROp_R rcx)) -> "%cl"
+  _ -> show op
 
 showJumpTarget :: X64Op -> String
 showJumpTarget op = case op of
@@ -163,8 +180,12 @@ opsOfInsn insn = case insn of
   (Add op0 op1) -> [op0, op1]
   (Sub op0 op1) -> [op0, op1]
   (Sal op0 op1) -> [op0, op1]
+  (Sar op0 op1) -> [op0, op1]
   (Call op0)    -> [op0]
   (Cmp op0 op1) -> [op0, op1]
+  (Test op0 op1) -> [op0, op1]
+  (Or op0 op1) -> [op0, op1]
+  (And op0 op1) -> [op0, op1]
   (Jmp op0)     -> [op0]
   (Lea op0 op1) -> [op0, op1]
   (Mov op0 op1 _) -> [op0, op1]
@@ -182,8 +203,12 @@ setOpsOfInsn ops insn = case (ops, insn) of
   ([op0, op1], (Add _ _)) -> Add op0 op1
   ([op0, op1], (Sub _ _)) -> Sub op0 op1
   ([op0, op1], (Sal _ _)) -> Sal op0 op1
+  ([op0, op1], (Sar _ _)) -> Sar op0 op1
   ([op0]     , (Call _) ) -> Call op0
   ([op0, op1], (Cmp _ _)) -> Cmp op0 op1
+  ([op0, op1], (Test _ _)) -> Test op0 op1
+  ([op0, op1], (Or _ _ )) -> Or op0 op1
+  ([op0, op1], (And _ _)) -> And op0 op1
   ([op0]     , (Jmp _)  ) -> Jmp op0
   ([op0, op1], (Lea _ _)) -> Lea op0 op1
   ([op0, op1], (Mov _ _ ty)) -> Mov op0 op1 ty

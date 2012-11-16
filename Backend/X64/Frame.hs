@@ -69,21 +69,25 @@ type StackLocGen = Int
 
 -- Note: none of the scratch regs are callee-saved.
 -- we need at most 3 scratch regs since a x64 insn can at most contain 3 regs
-scratchRegs = [rax, rcx, rdx]
+scratchRegs = [rax, rdx, r10]
 isScratchReg r = r `elem` scratchRegs
 
 argRegs = [rdi, rsi, rdx, rcx, r8, r9]
 
+-- rcx is reserved for use in shift operations (sal, sar).
+reservedRegs = [rsp, rbp, rip, rcx]
+
 calleeSaveRegs = [rbp, rbx, r12, r13, r14, r15]
 isCalleeSave r = r `elem` calleeSaveRegs
 -- rsp and rip are treated differently
-isCallerSave r = (not $ isCalleeSave r) && r `notElem` [rsp, rip]
+isCallerSave r = (not $ isCalleeSave r) && r `notElem` reservedRegs
 
 usableRegs = useMore ++ useLess
   where
     (useLess, useMore) = span isCalleeSave usableRegs'
-    usableRegs' = filter (\x -> x `notElem` scratchRegs ++ argRegs) [rax, rbx,
-      rcx, rdx, rdi, rsi, r8, r9, r10, r11, r12, r13, r14, r15]
+    usableRegs' = filter (\x -> x `notElem` scratchRegs ++ argRegs ++
+                          reservedRegs)
+                         allRegs
 
 regCount = length usableRegs
 
@@ -236,15 +240,19 @@ insertCallerSave :: [DFInsn] -> FrameGen [Insn]
 insertCallerSave insnList = do
   liftM concat $ forM insnList $ \(DFInsn insn _ (Liveness lvIn _)) -> do
     case insn of
-      (Call _) -> do
+      (Call dest) -> do
         let callerSaves = filter
               (\x -> isCallerSave x && (not $ isScratchReg x)) lvIn
             saveInsns = map (Push . X64Op_I . IROp_R) callerSaves
             restoreInsns = map (Pop . X64Op_I . IROp_R) (reverse callerSaves)
             -- XXX: hack, in case we are calling a vararg function.
+            -- but when dest contains a rax then we shall not set rax to zero.
             movRaxZero = Mov (X64Op_I $ IROp_R rax)
                              (X64Op_I $ IROp_I $ IVal 0) NormalMov
-        return $ saveInsns ++ [movRaxZero, insn] ++ restoreInsns
+            preCall = case dest of
+              (X64Op_I (IROp_I (LAddr _))) -> [movRaxZero]
+              _ -> []
+        return $ saveInsns ++ preCall ++ [insn] ++ restoreInsns
       _ -> return [insn]
 
 patchCalleeMovArg :: [Insn] -> FrameGen [Insn]
@@ -271,4 +279,13 @@ formatOutput insnList =
         writeLn $ funcName ++ ":"
         forM_ insnList $ \insn -> do
           writeLn $ gasShow insn
+
+--i32Max :: Int
+--i32Max = floor $ 2 ** (31 :: Double) - 1
+--
+--i32Min :: Int
+--i32Min = floor $ - 2 ** (31 :: Double)
+--
+--isInt32 :: Int -> Bool
+--isInt32 i = i32Min <= i && i <= i32Max
 
