@@ -51,7 +51,7 @@ visualize1 prog = do
               --               finalOutput]
               --return $ List.intercalate "\n------\n" outputs
               return finalOutput
-            (IRGen.VarDef name maybeVal) -> execWriterT $ do
+            (IRGen.QuadDef name maybeVal) -> execWriterT $ do
               let writeLn s = tell s >> tell "\n"
               writeLn ".data"
               writeLn ".align 8"
@@ -59,6 +59,12 @@ visualize1 prog = do
               writeLn $ ".quad " ++ case maybeVal of
                 (Just i) -> show i
                 Nothing -> "0"
+            (IRGen.StringDef name val) -> execWriterT $ do
+              let writeLn s = tell s >> tell "\n"
+              writeLn ".data"
+              writeLn ".align 8"
+              writeLn $ name ++ ":"
+              writeLn $ ".string \"" ++ val ++ "\""
 
   mapM_ putStrLn output
 

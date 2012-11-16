@@ -11,7 +11,8 @@ import qualified Data.List as List
 
 import Backend.IR.IROp
 
-data CallType = NormalCall | TailCall
+data CallType = NormalCall
+              | TailCall
   deriving (Show, Eq)
 
 data Tree = Leaf IROp

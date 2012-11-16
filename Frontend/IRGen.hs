@@ -15,7 +15,8 @@ import Backend.IR.Tree (Tree)
 import qualified Backend.IR.Tree as T
 
 data ToplevelDef = FuncDef String [Reg] Tree -- name args body
-                 | VarDef String (Maybe Int) -- name initialValue
+                 | QuadDef String (Maybe Int) -- name initialValue
+                 | StringDef String String -- name value
   deriving (Show)
 
 data IRGenState = IRGenState {
@@ -78,15 +79,16 @@ gen' c = case c of
 
 genToplevel :: Cell -> IRGen ToplevelDef
 genToplevel c = case c of
-  (List [Symbol "define", Symbol name]) -> return $ VarDef name Nothing
+  (List [Symbol "define", Symbol name]) -> return $ QuadDef name Nothing
   (List [Symbol "define", Symbol name,
          List (Symbol "lambda":formals:body)]) -> do
     formalRegs <- defineFormalArgs formals
     bodyTree <- liftM (T.Return . T.fromList) $ mapM genWith body
     clearSymTab
     return $ FuncDef name formalRegs bodyTree
-  (List [Symbol "define", Symbol name, Fixnum i]) -> do
-    return $ VarDef name (Just i)
+  (List [Symbol "define", Symbol name, form]) -> case form of
+    (Fixnum i) -> return $ QuadDef name (Just i)
+    (MString s) -> return $ StringDef name s
   _ -> error $ "IRGen.genToplevel: illegal form: " ++ show c
 
 defineFormalArgs :: Cell -> IRGen [Reg]
@@ -174,23 +176,23 @@ genWithList c = case c of
     trees <- mapM genWith xs
     return $ T.fromList trees
 
-  -- (funcall name args)
+  -- (call label args)
   (Symbol "%funcall":Symbol name:args) -> do
     argTrees <- mapM genWith args
     return $ T.Call (T.Leaf $ IROp_I $ LAddr name) argTrees T.NormalCall
 
-  -- (funcall/t name args)
+  -- (tailcall label args)
   (Symbol "%funcall/t":Symbol name:args) -> do
     argTrees <- mapM genWith args
     return $ T.Call (T.Leaf $ IROp_I $ LAddr name) argTrees T.TailCall
 
-  -- (funcall/r expr args)
+  -- (call expr args)
   (Symbol "%funcall/r":expr:args) -> do
     argTrees <- mapM genWith args
     funcTree <- genWith expr
     return $ T.Call funcTree argTrees T.NormalCall
 
-  -- (funcall/rt expr args)
+  -- (tailcall expr args)
   (Symbol "%funcall/rt":expr:args) -> do
     argTrees <- mapM genWith args
     funcTree <- genWith expr

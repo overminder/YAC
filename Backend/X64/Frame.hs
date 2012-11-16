@@ -232,7 +232,6 @@ insertProAndEpilogue insnList = do
         return $ leaveInsns ++ restoreInsns
       _ -> return [insn]
 
--- TODO: improve the algorithm
 insertCallerSave :: [DFInsn] -> FrameGen [Insn]
 insertCallerSave insnList = do
   liftM concat $ forM insnList $ \(DFInsn insn _ (Liveness lvIn _)) -> do
@@ -240,11 +239,12 @@ insertCallerSave insnList = do
       (Call _) -> do
         let callerSaves = filter
               (\x -> isCallerSave x && (not $ isScratchReg x)) lvIn
-        --forM callerSaves $ \r -> do
-        --  case
             saveInsns = map (Push . X64Op_I . IROp_R) callerSaves
             restoreInsns = map (Pop . X64Op_I . IROp_R) (reverse callerSaves)
-        return $ saveInsns ++ [insn] ++ restoreInsns
+            -- XXX: hack, in case we are calling a vararg function.
+            movRaxZero = Mov (X64Op_I $ IROp_R rax)
+                             (X64Op_I $ IROp_I $ IVal 0) NormalMov
+        return $ saveInsns ++ [movRaxZero, insn] ++ restoreInsns
       _ -> return [insn]
 
 patchCalleeMovArg :: [Insn] -> FrameGen [Insn]

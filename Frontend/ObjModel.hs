@@ -7,6 +7,7 @@ import qualified Data.List as List
 
 data Cell = Fixnum Int
           | Symbol String
+          | MString String
           | List [Cell]
           | DottedList [Cell] Cell
           | Boolean Bool
@@ -16,6 +17,7 @@ instance Show Cell where
   show (Fixnum i) = show i
   show (Symbol s) = s
   show (List xs) = "(" ++ List.intercalate " " (map show xs) ++ ")"
+  show (MString s) = "\"" ++ s ++ "\""
   show (DottedList xs x)
     = "(" ++ List.intercalate " " (map show xs) ++ " . " ++ show x ++ ")"
   show (Boolean True) = "#t"

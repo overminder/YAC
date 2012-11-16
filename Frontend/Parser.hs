@@ -28,6 +28,13 @@ parseAtom = do
 parseNumber :: Parser Cell
 parseNumber = liftM (Fixnum . read) (many1 digit)
 
+parseString :: Parser Cell
+parseString = do
+  char '"'
+  s <- many $ noneOf "\"\n"
+  char '"'
+  return $ MString s
+
 parsePair :: Parser Cell
 parsePair = do
   char '('
@@ -58,6 +65,7 @@ parseCell = parseAtom
         <|> parseNumber
         <|> parsePair
         <|> parseQuoted
+        <|> parseString
 
 parseProg :: Parser Cell
 parseProg = do
