@@ -45,5 +45,6 @@ runPeephole insnList = case insnList of
          
   (x:xs) -> do
     liftM (x:) (runPeephole xs)
+
   [] -> return []
 

@@ -140,7 +140,7 @@ munchTree t = case t of
         munchShift r0@(X64Op_I (IROp_R _))
                    r1@(X64Op_I (IROp_R _)) = do
           -- Note that sal and sar require src to be a 8-bit register
-          -- we choose to reserve al.
+          -- So we need to reserve cl.
           vReg <- newVReg
           emitInsn $ Mov vReg r0 NormalMov
           emitInsn $ Mov (X64Op_I $ IROp_R rcx) r1 NormalMov

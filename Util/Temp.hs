@@ -1,4 +1,4 @@
-module Backend.IR.Temp (
+module Util.Temp (
   TempGen,
   nextTemp,
   runTempGen,

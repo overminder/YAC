@@ -7,7 +7,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 
 import Frontend.ObjModel
-import Backend.IR.Temp
+import Util.Temp
 
 data RewriteState = RewriteState {
   rsVars :: [(String, Int)],

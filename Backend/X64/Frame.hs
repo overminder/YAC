@@ -29,6 +29,8 @@ module Backend.X64.Frame (
   regCount,
 ) where
 
+import qualified Util.Temp as Temp
+
 import Control.Monad.State
 import Control.Monad.Writer
 import qualified Data.List as List
@@ -36,7 +38,6 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 
 import Backend.IR.IROp
-import qualified Backend.IR.Temp as Temp
 import Backend.X64.Insn
 import Backend.X64.DataFlow
 

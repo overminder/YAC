@@ -8,9 +8,9 @@ import Control.Monad.State
 import Data.Map (Map)
 import qualified Data.Map as Map
 
+import Util.Temp
 import Frontend.ObjModel
 import Backend.IR.IROp
-import Backend.IR.Temp
 import Backend.IR.Tree (Tree)
 import qualified Backend.IR.Tree as T
 

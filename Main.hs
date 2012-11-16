@@ -1,10 +1,8 @@
-module Main where
-
 import Control.Monad
 import Control.Monad.Writer
 import qualified Data.List as List
 
-import Backend.IR.Temp
+import Util.Temp
 
 import Backend.X64.Munch
 import Backend.X64.DataFlow
@@ -16,7 +14,6 @@ import Backend.X64.Peephole
 
 import Frontend.ObjModel
 import Frontend.Parser
---import Frontend.Rewrite
 import qualified Frontend.IRGen as IRGen
 
 showMany :: Show a => [a] -> String
@@ -65,7 +62,6 @@ visualize1 prog = do
               writeLn ".align 8"
               writeLn $ name ++ ":"
               writeLn $ ".string \"" ++ val ++ "\""
-
   mapM_ putStrLn output
 
 main :: IO ()
