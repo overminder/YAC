@@ -202,7 +202,7 @@ genWithList c = case c of
     ptrTree <- genWith ptr
     offTree <- genWith offset
     valTree <- genWith val
-    return $ T.Move (T.Deref ptrTree) (T.Add offTree valTree)
+    return $ T.Move (T.Deref (T.Add ptrTree offTree)) valTree
 
   [Symbol "%get-quad", ptr, offset] -> do
     ptrTree <- genWith ptr
