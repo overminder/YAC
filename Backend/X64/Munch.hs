@@ -13,10 +13,48 @@ import qualified Backend.IR.Tree as T
 import Backend.X64.Insn
 import qualified Backend.X64.Frame as F
 
-type MunchGen = WriterT [Insn] F.FrameGen
+data MunchState = MunchState {
+  whileBlocks :: [(X64Op, X64Op)] -- (loop entry label, loop end label)
+}
+
+empty :: MunchState
+empty = MunchState []
+
+type MunchGen = StateT MunchState (WriterT [Insn] F.FrameGen)
+
+enterWhileBlock :: (X64Op, X64Op) -> MunchGen ()
+enterWhileBlock labels = modify $ \st -> st {
+  whileBlocks = labels:whileBlocks st
+}
+
+checkInWhileBlock :: String -> MunchGen ()
+checkInWhileBlock errMsg = do
+  isIn <- liftM (not . null . whileBlocks) get
+  if isIn
+    then return ()
+    else error $ "checkInWhileBlock failed: " ++ errMsg
+
+emitContinueWhile :: MunchGen ()
+emitContinueWhile = do
+  checkInWhileBlock "Munch.emitContinueWhile"
+  contLabel <- liftM (fst . head . whileBlocks) get
+  emitInsn $ Jmp contLabel
+
+emitBreakWhile :: MunchGen ()
+emitBreakWhile = do
+  checkInWhileBlock "Munch.emitBreakWhile"
+  brkLabel <- liftM (snd . head . whileBlocks) get
+  emitInsn $ Jmp brkLabel
+
+leaveWhileBlock :: MunchGen ()
+leaveWhileBlock = do
+  checkInWhileBlock "Munch.leaveWhileBlock"
+  modify $ \st -> st {
+    whileBlocks = tail $ whileBlocks st
+  }
 
 munch :: T.Tree -> F.FrameGen [Insn]
-munch t = execWriterT (munch' t)
+munch t = execWriterT (execStateT (munch' t) empty)
 
 munch' :: T.Tree -> MunchGen ()
 munch' t = do
@@ -28,17 +66,17 @@ munch' t = do
   return ()
 
 newVReg :: MunchGen X64Op
-newVReg = liftM toReg (lift F.nextTemp)
+newVReg = liftM toReg (lift $ lift F.nextTemp)
   where
     toReg = X64Op_I . IROp_R . VReg
 
 newLabel :: MunchGen X64Op
 newLabel = do
-  i <- lift F.nextTemp
+  i <- lift $ lift F.nextTemp
   return $ X64Op_I $ IROp_I $ LTmp i
 
 emitInsns :: [Insn] -> MunchGen ()
-emitInsns = tell
+emitInsns is = lift $ tell is
 
 emitInsn :: Insn -> MunchGen ()
 emitInsn i = emitInsns [i]
@@ -256,12 +294,19 @@ munchTree t = case t of
         r0 <- ensureReg v0
         emitInsn (Cmp r0 (X64Op_I $ IROp_I $ IVal 0))
         emitInsn (J T.Eq elseLabel)
-    _ <- munchTree (T.Move (T.Leaf retValIR) t1)
+
+    if T.hasValue t1
+      then munchTree (T.Move (T.Leaf retValIR) t1)
+      else munchTree t1
     emitInsn (Jmp endLabel)
     emitInsn (BindLabel elseLabel)
-    _ <- munchTree (T.Move (T.Leaf retValIR) t2)
+    if T.hasValue t2
+      then munchTree (T.Move (T.Leaf retValIR) t2)
+      else munchTree t2
     emitInsn (BindLabel endLabel)
-    return $ Just retVal
+    if T.hasValue t
+      then return $ Just retVal
+      else return Nothing
 
   (T.Seq t0 t1) -> do
     r0 <- munchTree t0
@@ -284,10 +329,36 @@ munchTree t = case t of
       _ -> error $ "Munch.munchTree: " ++ show t
     (IROp_R reg) -> return $ Just $ X64Op_I op
 
+  -- Need to unify with if.
+  (T.While condTree bodyTree) -> do
+    startLabel <- newLabel
+    endLabel <- newLabel
+    --
+    emitInsn $ BindLabel startLabel
+    (Just cond) <- munchTree condTree
+    condReg <- ensureReg cond
+    emitInsn (Cmp condReg (X64Op_I $ IROp_I $ IVal 0))
+    emitInsn (J T.Eq endLabel)
+    --
+    enterWhileBlock (startLabel, endLabel)
+    munchTree bodyTree
+    emitInsn (Jmp startLabel)
+    emitInsn $ BindLabel endLabel
+    leaveWhileBlock
+    return Nothing
+
+  T.Break -> do
+    emitBreakWhile
+    return Nothing
+
+  T.Continue -> do
+    emitContinueWhile
+    return Nothing
+
   (T.Call funcTree argTrees tailp) -> do
     -- Firstly evaluate all args
     let nArgs = length argTrees
-    lift $ F.recordCallArgCount nArgs
+    lift $ lift $ F.recordCallArgCount nArgs
     argValues <- forM argTrees munchTree
     -- Then put them into the arg pos
     forM_ (zip argValues F.callerArgOps) $ \(maybeV, dest) ->
@@ -319,10 +390,12 @@ munchTree t = case t of
                 (Just func) <- munchTree funcTree
                 emitInsn $ PInsn InsertEpilogue
                 emitInsn $ Jmp func
-            return $ Just (X64Op_I $ IROp_R rax) -- Actually not reached
+            return Nothing
 
-  (T.Return retVal) -> do
-    _ <- munchTree (T.Move (T.Leaf (IROp_R rax)) retVal)
+  (T.Return retTree) -> do
+    if T.hasValue retTree
+      then munchTree (T.Move (T.Leaf (IROp_R rax)) retTree)
+      else munchTree retTree
     emitInsn (PInsn InsertEpilogue)
     emitInsn Ret
     return Nothing

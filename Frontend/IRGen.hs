@@ -176,6 +176,14 @@ genWithList c = case c of
     trees <- mapM genWith xs
     return $ T.fromList trees
 
+  (Symbol "%while":cond:body) -> do
+    condTree <- genWith cond
+    bodyTree <- genWith $ List (Symbol "begin":body)
+    return $ T.While condTree bodyTree
+
+  [Symbol "%break"] -> return T.Break
+  [Symbol "%continue"] -> return T.Continue
+
   -- (call label args)
   (Symbol "%funcall":Symbol name:args) -> do
     argTrees <- mapM genWith args

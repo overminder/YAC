@@ -3,6 +3,7 @@ module Backend.IR.Tree (
   CallType(..),
   Cond(..),
   Direction(..),
+  hasValue,
   reverseCond,
   fromList,
   toList
@@ -26,6 +27,9 @@ data Tree = Leaf IROp
           | Move Tree Tree
           | Deref Tree
           | If Tree Tree Tree
+          | While Tree Tree -- cond body
+          | Continue -- continue in the while loop
+          | Break -- break a while
           | Compare Tree Tree Cond
           | Call Tree [Tree] CallType -- func arg tailp
           | Return Tree
@@ -37,6 +41,31 @@ data Direction = ToLeft | ToRight
 
 data Cond = Ge | Gt | Le | Lt | Eq | Ne
   deriving (Show, Eq)
+
+-- Used to distinguish between stmt trees and expr trees.
+-- (Since using the type system to encode that will be difficult.)
+hasValue :: Tree -> Bool
+hasValue t = case t of
+  (Leaf _) -> True
+  (Seq lhs Nop) -> hasValue lhs
+  (Seq _ rhs) -> hasValue rhs
+  (Add _ _) -> True
+  (Sub _ _) -> True
+  (Shift _ _ _) -> True
+  (BitAnd _ _) -> True
+  (BitOr _ _) -> True
+  (Move _ _) -> False
+  (Deref _) -> True
+  (If _ lhs rhs) -> hasValue lhs || hasValue rhs
+  (While _ _) -> False
+  Continue -> False
+  Break -> False
+  (Compare _ _ _) -> True
+  (Call _ _ ty) -> case ty of
+    NormalCall -> True
+    TailCall -> False
+  (Return _) -> False
+  Nop -> error "Tree.hasValue: Not reached (Nop)."
 
 reverseCond :: Cond -> Cond
 reverseCond c = case c of

@@ -236,6 +236,7 @@ isBranchInsn insn = case insn of
   Ret -> True
   _ -> False
 
+-- Only for temporary label
 isBranchTarget :: Insn -> Bool
 isBranchTarget insn = case insn of
   (BindLabel _) -> True
@@ -243,8 +244,12 @@ isBranchTarget insn = case insn of
 
 getBranchTarget :: Insn -> Maybe Imm
 getBranchTarget insn = case insn of
-  (J _ (X64Op_I (IROp_I label))) -> Just label
-  (Jmp (X64Op_I (IROp_I label@(LAddr _)))) -> Just label
+  (J _ (X64Op_I (IROp_I label))) -> case label of
+    (LTmp _) -> Just label
+    _ -> Nothing
+  (Jmp (X64Op_I (IROp_I label))) -> case label of
+    (LTmp _) -> Just label
+    _ -> Nothing
   _ -> Nothing
 
 mightFallThrough :: Insn -> Bool

@@ -42,11 +42,15 @@ visualize1 prog = do
               insns1 <- F.insertCallerSave flowInsns'
               insns2 <- F.patchCalleeMovArg insns1
               finalOutput <- F.formatOutput insns2
-              --let outputs = [show tree,
-              --               showMany rawInsns,
-              --               showMany flowInsns,
-              --               finalOutput]
-              --return $ List.intercalate "\n------\n" outputs
+              --let outputPairs = [("Tree", show tree),
+              --                   ("Munched Insn", showMany rawInsns),
+              --                   ("RawGraph", show graph),
+              --                   ("Liveness-Graph", show graph1),
+              --                   ("DFA-ed", showMany flowInsns),
+              --                   ("Final", finalOutput)]
+              --    output = map (\(a, b) -> a ++ ":\n------\n" ++
+              --                             b ++ "\n") outputPairs
+              --return $ List.intercalate "\n\n" output
               return finalOutput
             (IRGen.QuadDef name maybeVal) -> execWriterT $ do
               let writeLn s = tell s >> tell "\n"

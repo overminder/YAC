@@ -9,5 +9,5 @@ type CPSTransGen = TempGen
 runCPSTrans :: Cell -> Cell
 runCPSTrans c = case c of
   (List cs) -> 
-  _ -> error ""
+  _ -> error $ "runCPSTrans: not a proper list: " ++ show c
 

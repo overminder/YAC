@@ -61,6 +61,12 @@ pass = return ()
 
 addOneInsn :: Insn -> GraphGen ()
 addOneInsn insn
+  -- for `Jmp', we have several cases
+  -- 1. non-jump
+  --    Jmp .Label <-
+  --
+  -- 2. Jmp XX
+  --    Jmp .Label <-
   | isBranchInsn insn = do
       currBlock <- getCurrBlock
       modify $ \st -> st {
@@ -78,11 +84,11 @@ addOneInsn insn
 
   -- for `Label', we have three cases:
   -- 1. jmp/jz XXX
-  --    Label: 
+  --    Label: <-
   -- For this case, there's no need to create new block
   --
   -- 2. mov XXX
-  --    Label:
+  --    Label: <-
   -- For this case, we should create new block
   --
   -- 3. Label:
@@ -109,7 +115,8 @@ resolveDefConns = do
   forM_ defConns $ \(fromB, label) -> do
     case Map.lookup label labelMap of
       (Just toB) -> connectBlock fromB toB
-      Nothing -> return () -- XXX: has label, no block?
+      Nothing -> error $ "GraphBuilder.resolveDefConns: no block for label "
+                         ++ show label
 
 addToCurrBlock :: Insn -> GraphGen ()
 addToCurrBlock insn = do

@@ -75,6 +75,8 @@ setFullInsnList xs bb = case ctrlInsn bb of
 getFirstInsn :: BasicBlock a -> a
 getFirstInsn bb = case bb of
   BasicBlock{insnList=x:xs} -> x
+  BasicBlock{insnList=[], ctrlInsn=Just x} -> x
+  -- ^ This line was absent before.. Obviously a bug.
   _ -> error "BasicBlock.getFirstInsn: this block is empty!"
 
 toTrace :: BasicBlock a -> [a]
