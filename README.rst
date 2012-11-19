@@ -12,7 +12,7 @@ Usage
   ``ghc --make Main``
 
   - See assembly result
-  ``echo "(define a 1) (define b 2) (define c (+ a b))" | ./Main``
+  ``echo "(define main (lambda (argc argv) 0))" | ./Main``
 
-  - Run assembly (require csi)
-  ``./SampleProg/compile-and-run.py ./SampleProg/test-if.ss``
+  - Compile and run assembly
+  ``./SampleProg/cc.py ./SampleProg/test-if.ss -r``
