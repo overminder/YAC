@@ -369,6 +369,7 @@ munchTree t = case t of
         _ -> error $ "Munch.munchTree: arg has no value: " ++ show argTrees
     case tailp of
       T.NormalCall -> do
+        lift $ lift $ F.setIsLeafFunction False
         case funcTree of
           (T.Leaf name@(IROp_I (LAddr _))) -> emitInsn $ Call (X64Op_I name)
           _ -> do

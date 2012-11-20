@@ -15,4 +15,4 @@ Usage
   ``echo "(define main (lambda (argc argv) 0))" | ./Main``
 
   - Compile and run assembly
-  ``./SampleProg/cc.py ./SampleProg/test-if.ss -r``
+  ``./SampleProg/cc.py ./SampleProg/test-oop.ss -r``

@@ -9,7 +9,7 @@ parser.add_argument(
         help='compile the content of FILE')
 parser.add_argument(
         '-o', '--output_file',
-        metavar='FILE', default='a.out',
+        metavar='FILE', default=path('a.out'),
         help='output to FILE')
 parser.add_argument(
         '--run_with_csi', action='store_true',
@@ -21,8 +21,8 @@ parser.add_argument(
 args = parser.parse_args()
 
 src_name = args.input_file
-lib_name = 'lib.c'
-asm_name = 'test.S'
+lib_name = path('lib.c')
+asm_name = path('test.S')
 bin_name = args.output_file
 
 with timeit('hs-compile'):

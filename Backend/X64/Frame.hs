@@ -18,6 +18,7 @@ module Backend.X64.Frame (
   setFuncName,
   setFuncArgs,
   recordCallArgCount,
+  setIsLeafFunction,
 
   StorageType(..),
   isInStack,
@@ -50,7 +51,8 @@ data Frame = Frame {
   freeRegs :: [Reg],
   tempRegs :: [Reg],
   funcArgs :: [Reg],
-  mostCallArgCount :: Int
+  mostCallArgCount :: Int,
+  isLeafFunction :: Bool
 }
 
 type FrameGen = StateT Frame Temp.TempGen
@@ -118,7 +120,8 @@ empty = Frame {
   freeRegs = usableRegs,
   tempRegs = scratchRegs,
   funcArgs = [],
-  mostCallArgCount = 0
+  mostCallArgCount = 0,
+  isLeafFunction = False
 }
 
 nextTemp :: FrameGen Int
@@ -200,6 +203,11 @@ restoreTempRegs = do
 recordCallArgCount :: Int -> FrameGen ()
 recordCallArgCount i = modify $ \st -> st {
   mostCallArgCount = max (mostCallArgCount st) i
+}
+
+setIsLeafFunction :: Bool -> FrameGen ()
+setIsLeafFunction b = modify $ \st -> st {
+  isLeafFunction = b
 }
 
 getMostCallArgCount :: FrameGen Int
