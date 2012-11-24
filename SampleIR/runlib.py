@@ -21,7 +21,7 @@ def hs_compile(name_in, name_out):
     with open(name_in) as f:
         src = f.read()
 
-    p = Popen([path('../Main')], stdin=PIPE, stdout=PIPE, stderr=PIPE)
+    p = Popen([path('../bin/IRToAsm')], stdin=PIPE, stdout=PIPE, stderr=PIPE)
     out, err = p.communicate(src)
     if err:
         raise CompileError(err)
