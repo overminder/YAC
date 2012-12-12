@@ -70,11 +70,6 @@ visualize1 prog = do
 
 main :: IO ()
 main = do
-  input <- getContents
-  let (List c) = readProg input
-  --putStrLn $ "\t.parse-result\n" ++ show (List c)
-  case c of
-    [Symbol "parse-success", prog] -> visualize1 prog
-    [Symbol "parse-error", what] -> putStrLn $ show what
-    _ -> error "not reached"
+  prog <- liftM readProgSucc getContents
+  visualize1 $ List prog
 

@@ -1,5 +1,6 @@
 module Frontend.Parser (
-  readProg
+  readProg,
+  readProgSucc
 ) where
 
 import Text.ParserCombinators.Parsec
@@ -14,6 +15,14 @@ readProg :: String -> Cell
 readProg input = case parse parseProg "Scheme" input of
   Left err -> List [Symbol "parse-error", Symbol $ show err]
   Right val -> List [Symbol "parse-success", val]
+
+readProgSucc :: String -> [Cell]
+readProgSucc input = case c of
+  [Symbol "parse-success", List prog] -> prog
+  [Symbol "parse-error", what] -> error $ show what
+  _ -> error "not reached"
+  where
+    List c = readProg input
 
 parseAtom :: Parser Cell
 parseAtom = do
