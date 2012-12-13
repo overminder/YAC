@@ -34,6 +34,11 @@ pprCFuncScInit cf@(CFunc name vars code) = do
                  "(ScmPtr) &_" ++ rest ++ ";"
     _ -> return ()
 
+pprCVarInit cf@(name, expr) = do
+  case expr of
+    EUnbound -> putStrLn $ "ScmPtr " ++ name ++ " = Scm_Unbound;"
+    _ -> error $ "toplevel expr not allowed: " ++ show expr
+
 pprCFunc cf@(CFunc name vars code) = do
   let localVars = map ("ScmPtr "++) ("thisClosure":findLocals' cf)
   putStrLn $ "void " ++ name ++ "(" ++ intercalate ", " localVars ++ ") {"
@@ -42,7 +47,7 @@ pprCFunc cf@(CFunc name vars code) = do
 
 main = do
   prog <- liftM readProgSucc getContents
-  let (ast,cps,uvl,mgd,cfs) = runTempGen $ do
+  let (ast,cps,uvl,mgd,cfs,cvs) = runTempGen $ do
               defns <- runASTGen $ toAST prog
               cpsForm <- runCPSTrans $ forM (Map.toList defns) $
                                             \(name, expr) ->
@@ -63,7 +68,7 @@ main = do
                 return (mangle name, fmap mangle expr)
 
               let lams = filter (\(_, e) -> isLambda e) mangled
-                  vars = filter (\(_, e) -> not $ isLambda e) mangled
+                  cVars = filter (\(_, e) -> not $ isLambda e) mangled
                   isLambda (ELambda _ _ _) = True
                   isLambda _ = False
                   prefixedLams = map (\(name, e) -> ("Sc_" ++ name, e)) lams
@@ -73,7 +78,8 @@ main = do
                      , Map.fromList cpsForm
                      , Map.fromList uvLifted
                      , Map.fromList mangled
-                     , cFuncs)
+                     , cFuncs
+                     , cVars)
   putStrLn "/*"
   pprScDefns ast
   putStrLn (take 78 (repeat '*'))
@@ -88,6 +94,8 @@ main = do
   mapM_ pprCFuncDecl cfs
   putStrLn ""
   mapM_ pprCFuncScInit cfs
+  putStrLn ""
+  mapM_ pprCVarInit cvs
   putStrLn ""
   mapM_ pprCFunc cfs
   return ()

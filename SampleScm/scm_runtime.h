@@ -29,6 +29,7 @@ typedef struct {
 typedef void (*ScmFuncPtr1) (ScmPtr, ScmPtr);
 typedef void (*ScmFuncPtr2) (ScmPtr, ScmPtr, ScmPtr);
 typedef void (*ScmFuncPtr3) (ScmPtr, ScmPtr, ScmPtr, ScmPtr);
+typedef void (*ScmFuncPtr4) (ScmPtr, ScmPtr, ScmPtr, ScmPtr, ScmPtr);
 
 #define Scm_HeapObjType(o) \
     ((ScmHeapObj *) (o))->obtype
@@ -41,6 +42,9 @@ typedef void (*ScmFuncPtr3) (ScmPtr, ScmPtr, ScmPtr, ScmPtr);
 
 #define Scm_TailCall3(clo, arg1, arg2, arg3) \
     ((ScmFuncPtr3) ScmClosure_Code(clo))(clo, arg1, arg2, arg3)
+
+#define Scm_TailCall4(clo, arg1, arg2, arg3, arg4) \
+    ((ScmFuncPtr4) ScmClosure_Code(clo))(clo, arg1, arg2, arg3, arg4)
 
 #define ScmClosure_UpvalAt(clo, n) \
     (((ScmClosure *) (clo))->upvals[n])
@@ -79,10 +83,12 @@ extern ScmPtr zg;  /* + */
 extern ScmPtr zh;  /* - */
 extern ScmPtr zl;  /* < */
 extern ScmPtr halt;
-extern ScmPtr Scm_True;
-extern ScmPtr Scm_False;
-extern ScmPtr Scm_Unspecified;
-extern ScmPtr Scm_Unbound;
+
+// XXXX XX10
+#define Scm_True 2
+#define Scm_False 6
+#define Scm_Unspecified 10
+#define Scm_Unbound 14
 
 extern ScmPtr Mainzkmain;  /* exported by app code */
 

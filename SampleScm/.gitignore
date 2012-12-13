@@ -1,2 +1,4 @@
 a.out
 gmon.out
+test.c
+*.pyc

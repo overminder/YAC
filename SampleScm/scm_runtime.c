@@ -52,9 +52,4 @@ static void halt_func(ScmPtr _, ScmPtr a) {
 static ScmClosure _halt = Scm_MkSuperComb(halt_func);
 ScmPtr halt = (ScmPtr) &_halt;
 
-// XXXX XX10
-ScmPtr Scm_True = 2;
-ScmPtr Scm_False = 6;
-ScmPtr Scm_Unspecified = 10;
-ScmPtr Scm_Unbound = 14;
 

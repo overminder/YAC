@@ -39,7 +39,7 @@ static Heap *curr_heap;
 
 void
 Scm_GcInit() {
-    size_t size = 16 * KB;
+    size_t size = 256 * KB;
     curr_heap = malloc(sizeof(Heap));
     curr_heap->space_size = size;
     curr_heap->from_space = (ScmPtr) malloc(size);

@@ -4,5 +4,5 @@
       (+ (fibo (- n 1))
 	 (fibo (- n 2)))))
 
-(display (fibo 10))
+(display (fibo 35))
 
