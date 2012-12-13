@@ -9,10 +9,10 @@ Usage
 -----
 
   - Compile
-  ``ghc --make Main``
+  ``make``
 
   - See assembly result
-  ``echo "(define main (lambda (argc argv) 0))" | ./Main``
+  ``echo "(define main (lambda (argc argv) 0))" | ./bin/IRToAsm``
 
   - Compile and run assembly
   ``./SampleProg/cc.py ./SampleProg/test-oop.ss -r``

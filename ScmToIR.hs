@@ -1,5 +1,6 @@
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.List (intercalate)
 import Control.Monad
 
 import Util.Temp
@@ -9,6 +10,7 @@ import Frontend.Scheme.AST
 import Frontend.Scheme.Mangler
 import Frontend.Scheme.CPSTrans
 import Frontend.Scheme.UpvalLift
+import Frontend.Scheme.GenC
 
 pprScDefns scDefns =
   forM_ (Map.toList scDefns) $ \(name, expr) -> do
@@ -19,9 +21,28 @@ pprScDefn name expr = do
   putStrLn $ Ppr.ppr $ Ppr.render expr
   putStrLn ""
 
+pprCFuncDecl cf@(CFunc name vars code) = do
+  let localVars = map ("ScmPtr "++) ("thisClosure":findLocals' cf)
+  putStrLn $ "void " ++ name ++ "(" ++ intercalate ", " localVars ++ ");"
+
+pprCFuncScInit cf@(CFunc name vars code) = do
+  case name of
+    'S':'c':'_':rest -> do
+      putStrLn $ "static ScmClosure " ++ "_" ++ rest ++ " = " ++
+                 "Scm_MkSuperComb(" ++ name ++ ");"
+      putStrLn $ "ScmPtr " ++ rest ++ " = " ++
+                 "(ScmPtr) &_" ++ rest ++ ";"
+    _ -> return ()
+
+pprCFunc cf@(CFunc name vars code) = do
+  let localVars = map ("ScmPtr "++) ("thisClosure":findLocals' cf)
+  putStrLn $ "void " ++ name ++ "(" ++ intercalate ", " localVars ++ ") {"
+  mapM_ putStrLn code
+  putStrLn "}"
+
 main = do
   prog <- liftM readProgSucc getContents
-  let (ast,cps,uvl,mgd) = runTempGen $ do
+  let (ast,cps,uvl,mgd,cfs) = runTempGen $ do
               defns <- runASTGen $ toAST prog
               cpsForm <- runCPSTrans $ forM (Map.toList defns) $
                                             \(name, expr) ->
@@ -40,10 +61,20 @@ main = do
                     return (name, expr)
               mangled <- forM uvLifted $ \(name, expr) ->
                 return (mangle name, fmap mangle expr)
+
+              let lams = filter (\(_, e) -> isLambda e) mangled
+                  vars = filter (\(_, e) -> not $ isLambda e) mangled
+                  isLambda (ELambda _ _ _) = True
+                  isLambda _ = False
+                  prefixedLams = map (\(name, e) -> ("Sc_" ++ name, e)) lams
+
+              cFuncs <- runGenC (GenState [] prefixedLams) genToplevel
               return (defns
                      , Map.fromList cpsForm
                      , Map.fromList uvLifted
-                     , Map.fromList mangled)
+                     , Map.fromList mangled
+                     , cFuncs)
+  putStrLn "/*"
   pprScDefns ast
   putStrLn (take 78 (repeat '*'))
   pprScDefns cps
@@ -51,4 +82,13 @@ main = do
   pprScDefns uvl
   putStrLn (take 78 (repeat '*'))
   pprScDefns mgd
+  putStrLn (take 78 (repeat '*'))
+  putStrLn "*/"
+  putStrLn "#include \"scm_runtime.h\""
+  mapM_ pprCFuncDecl cfs
+  putStrLn ""
+  mapM_ pprCFuncScInit cfs
+  putStrLn ""
+  mapM_ pprCFunc cfs
   return ()
+

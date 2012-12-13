@@ -19,11 +19,13 @@ mangle :: String -> String
 mangle = concatMap mangleChar
 
 mangleChar :: Char -> String
-mangleChar c = mangleMap Map.! (ord c)
+mangleChar c = case Map.lookup (ord c) mangleMap of
+  Just v -> v
+  Nothing -> error $ "mangleChar: no such char: " ++ show c
 
 demangle :: String -> String
 demangle s = case s of
-  ('$':x:xs) -> (demangleMap Map.! ['$', x]):demangle xs
+  ('z':x:xs) -> (demangleMap Map.! ['z', x]):demangle xs
   (x:xs) -> x:demangle xs
   [] -> []
 

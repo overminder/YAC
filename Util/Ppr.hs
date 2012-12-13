@@ -12,7 +12,7 @@ import Control.Monad.State
 type Render = State RenderState
 
 class Ppr a where
-  render :: Ppr a => a -> Render ()
+  render :: a -> Render ()
 
 data RenderState
   = RenderState {
