@@ -15,6 +15,7 @@ typedef intptr_t ScmPtr;
     int32_t obsize
 
 #define Scm_ClosureType 1
+#define Scm_PairType 2
 
 typedef struct {
     SCM_HEADER;
@@ -25,6 +26,12 @@ typedef struct {
     void *code;
     ScmPtr upvals[0];
 } ScmClosure;
+
+typedef struct {
+    SCM_HEADER;
+    ScmPtr p_car;
+    ScmPtr p_cdr;
+} ScmPair;
 
 typedef void (*ScmFuncPtr1) (ScmPtr, ScmPtr);
 typedef void (*ScmFuncPtr2) (ScmPtr, ScmPtr, ScmPtr);
@@ -52,6 +59,12 @@ typedef void (*ScmFuncPtr4) (ScmPtr, ScmPtr, ScmPtr, ScmPtr, ScmPtr);
 #define ScmClosure_Code(clo) \
     (((ScmClosure *) (clo))->code)
 
+#define ScmPair_Car(p) \
+    (((ScmPair *) (p))->p_car)
+
+#define ScmPair_Cdr(p) \
+    (((ScmPair *) (p))->p_cdr)
+
 // XXXX XX01
 #define Scm_MkInt(i) \
     (((i) << 2) + 1)
@@ -73,6 +86,7 @@ typedef void (*ScmFuncPtr4) (ScmPtr, ScmPtr, ScmPtr, ScmPtr, ScmPtr);
 
 void Scm_GcInit();
 void Scm_GcFini();
+void Scm_AddGlobalGcRoot(ScmPtr *);
 void Scm_PushGcRoot(ScmPtr);
 ScmPtr Scm_PopGcRoot();
 ScmPtr Scm_GcAlloc(size_t);
@@ -84,12 +98,20 @@ extern ScmPtr zg;  /* + */
 extern ScmPtr zh;  /* - */
 extern ScmPtr zl;  /* < */
 extern ScmPtr halt;
+extern ScmPtr cons;
+extern ScmPtr car;
+extern ScmPtr cdr;
+extern ScmPtr setzhcarza;  /* set-car! */
+extern ScmPtr setzhcdrza;  /* set-cdr! */
+extern ScmPtr callzjcc;  /* call/cc */
+extern ScmPtr eqzo;  /* eq? */
 
 // XXXX XX10
 #define Scm_True 2
 #define Scm_False 6
 #define Scm_Unspecified 10
 #define Scm_Unbound 14
+#define Scm_Nil 18
 
 extern ScmPtr Mainzkmain;  /* exported by app code */
 

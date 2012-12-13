@@ -1,6 +1,7 @@
 """ Just like haskell's z-encoding...
 """
 
+import sys
 from itertools import chain
 
 def char_range(a, z):
@@ -34,21 +35,26 @@ for (from_c, to_c) in extra_table:
 whole_table[ord('_')] = '_'
 whole_table[ord('z')] = 'zz'
 
-print '''module Frontend.Scheme.MangleTable (
-  prefix,
-  table,
-) where
+if __name__ == '__main__':
+    if len(sys.argv) == 1: # print table
+        print '''module Frontend.Scheme.MangleTable (
+          prefix,
+          table,
+        ) where
 
-prefix :: Char
-prefix = 'z'
+        prefix :: Char
+        prefix = 'z'
 
-table :: [(Int, String)]
-table = ['''
+        table :: [(Int, String)]
+        table = ['''
 
 # [(Int, Char)]
-whole_table = [(i, s) for (i, s) in enumerate(whole_table) if s is not None]
+        whole_table = [(i, s) for (i, s) in enumerate(whole_table) if s is not None]
 
-print ",\n".join('  (%d, "%s")' % (i, s) for (i, s) in whole_table)
+        print ",\n".join('  (%d, "%s")' % (i, s) for (i, s) in whole_table)
 
-print '  ]'
+        print '  ]'
+    else:
+        s = sys.argv[1]
+        print '"%s"' % ''.join(whole_table[ord(c)] for c in s)
 

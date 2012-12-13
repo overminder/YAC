@@ -8,9 +8,10 @@
   (lambda ()
     n))
 
-(define cell (make-cell 123))
-(display (fibo 30))
-(newline)
-(display (cell))
-(newline)
+(begin
+  (define cell (make-cell (cons 1 2)))
+  (display (fibo 20))
+  (newline)
+  (display (cell))
+  (newline))
 

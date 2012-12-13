@@ -41,6 +41,7 @@ data AbstractExpr a
   | EBool Bool
   | EUnbound
   | EUnspecified
+  | ENil
   -- Complex exprs
   | ELambda [a] [a] (AbstractExpr a) -- capture \args body
   | EAp (AbstractExpr a) [AbstractExpr a]
@@ -63,6 +64,7 @@ instance Functor AbstractExpr where
     EBool b -> EBool b
     EUnbound -> EUnbound
     EUnspecified -> EUnspecified
+    ENil -> ENil
 
 type Expr = AbstractExpr String
 
@@ -73,6 +75,7 @@ instance Ppr.Ppr Expr where
     EBool b -> Ppr.write $ show b
     EUnbound -> Ppr.write "#<Unbound>"
     EUnspecified -> Ppr.write "#<Unspecified>"
+    ENil -> Ppr.write "()"
     ELambda upvals args body -> do
       if not $ null upvals
         then do
@@ -145,6 +148,7 @@ isAtom e = case e of
   EBool _ -> True
   EUnbound -> True
   EUnspecified -> True
+  ENil -> True
   _ -> False
 
 runASTGen :: ASTGen a -> TempGen a
@@ -201,12 +205,16 @@ toExpr c = case c of
     EIf (toExpr cond) (toExpr ifTrue) (toExpr ifFalse)
   List [Symbol "if", cond, ifTrue] ->
     EIf (toExpr cond) (toExpr ifTrue) EUnspecified
+  List (Symbol "begin":rest) ->
+    ESeq (map toExpr rest)
+  List [Symbol "quote", List []] -> ENil
+  List [Symbol "quote", Symbol s] -> error $ "symbol not supported"
   List (func:args) ->
     EAp (toExpr func) (map toExpr args)
   Symbol name -> EVar name
   Fixnum i -> EInt i
   Boolean b -> EBool b
-  _ -> error $ "Unknown expr: " ++ show c
+  _ -> error $ "toExpr: Unknown expr: " ++ show c
 
 symToStr :: Cell -> String
 symToStr c = case c of

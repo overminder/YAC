@@ -33,6 +33,8 @@ typedef struct {
     size_t space_size;
     ScmPtr root_stack[ROOT_STACK_SIZE];
     ScmPtr *root_stack_ptr;
+    ScmPtr *global_roots[ROOT_STACK_SIZE];
+    ScmPtr **global_root_ptr;
 } Heap;
 
 static Heap *curr_heap;
@@ -47,6 +49,7 @@ Scm_GcInit() {
     curr_heap->limit = curr_heap->from_space + size;
     curr_heap->to_space = (ScmPtr) malloc(size);
     curr_heap->root_stack_ptr = curr_heap->root_stack;
+    curr_heap->global_root_ptr = curr_heap->global_roots;
 }
 
 void
@@ -55,6 +58,12 @@ Scm_GcFini() {
     free((void *) curr_heap->to_space);
     free(curr_heap);
     curr_heap = 0;
+}
+
+void
+Scm_AddGlobalGcRoot(ScmPtr *g) {
+    *(curr_heap->global_root_ptr) = g;
+    curr_heap->global_root_ptr++;
 }
 
 void
@@ -93,6 +102,7 @@ static void _RedirectInteriorPointer(GcHeader *);
 void
 Scm_GcCollect() {
     ScmPtr *iter;
+    ScmPtr **iter2;
     ScmPtr v;
     GcHeader *h;
 
@@ -100,6 +110,14 @@ Scm_GcCollect() {
     for (iter = curr_heap->root_stack;
          iter < curr_heap->root_stack_ptr; ++iter) {
         v = *iter;
+        if (Scm_IsPointer(v) && MARKOF(v) == GC_UNREACHABLE) {
+            _MarkPointer((GcHeader *) v);
+        }
+    }
+
+    for (iter2 = curr_heap->global_roots;
+         iter2 < curr_heap->global_root_ptr; ++iter2) {
+        v = **iter2;
         if (Scm_IsPointer(v) && MARKOF(v) == GC_UNREACHABLE) {
             _MarkPointer((GcHeader *) v);
         }
@@ -127,10 +145,16 @@ Scm_GcCollect() {
     for (iter = curr_heap->root_stack;
          iter < curr_heap->root_stack_ptr; ++iter) {
         v = *iter;
-        if (Scm_IsPointer(v)) {
-            if (MARKOF(v) == GC_MOVED_FROM) {
-                *iter = COPIED_TO(v);
-            }
+        if (Scm_IsPointer(v) && MARKOF(v) == GC_MOVED_FROM) {
+            *iter = COPIED_TO(v);
+        }
+    }
+
+    for (iter2 = curr_heap->global_roots;
+         iter2 < curr_heap->global_root_ptr; ++iter2) {
+        v = **iter2;
+        if (Scm_IsPointer(v) && MARKOF(v) == GC_MOVED_FROM) {
+            **iter2 = COPIED_TO(v);
         }
     }
 
@@ -143,6 +167,7 @@ Scm_GcCollect() {
     curr_heap->limit = curr_heap->from_space + curr_heap->space_size;
 }
 
+/* Recursive mark? */
 static void
 _MarkPointer(GcHeader *ptr) {
     ptr->gcmark = GC_MARKED;
@@ -153,9 +178,18 @@ _MarkPointer(GcHeader *ptr) {
         for (i = 0; i < nb_upvals; ++i) {
             ScmPtr upval = upvals[i];
             if (Scm_IsPointer(upval) && MARKOF(upval) == GC_UNREACHABLE) {
-                /* Recursive mark? */
                 _MarkPointer((GcHeader *) upval);
             }
+        }
+    }
+    else if (ptr->obtype == Scm_PairType) {
+        ScmPtr iptr = ScmPair_Car(ptr);
+        if (Scm_IsPointer(iptr) && MARKOF(iptr) == GC_UNREACHABLE) {
+            _MarkPointer((GcHeader *) iptr);
+        }
+        iptr = ScmPair_Cdr(ptr);
+        if (Scm_IsPointer(iptr) && MARKOF(iptr) == GC_UNREACHABLE) {
+            _MarkPointer((GcHeader *) iptr);
         }
     }
     else {
@@ -190,6 +224,16 @@ _RedirectInteriorPointer(GcHeader *ptr) {
             if (Scm_IsPointer(upval) && MARKOF(upval) == GC_MOVED_FROM) {
                 upvals[i] = COPIED_TO(upval);
             }
+        }
+    }
+    else if (ptr->obtype == Scm_PairType) {
+        ScmPtr iptr = ScmPair_Car(ptr);
+        if (Scm_IsPointer(iptr) && MARKOF(iptr) == GC_MOVED_FROM) {
+            ScmPair_Car(ptr) = COPIED_TO(iptr);
+        }
+        iptr = ScmPair_Cdr(ptr);
+        if (Scm_IsPointer(iptr) && MARKOF(iptr) == GC_MOVED_FROM) {
+            ScmPair_Cdr(ptr) = COPIED_TO(iptr);
         }
     }
     else {

@@ -47,18 +47,13 @@ runGenC initState m = do
 mkGenState :: [(String, Expr)] -> GenState
 mkGenState topDefs = GenState [] (concatMap mkSuperComb topLams ++
                                   map mkVarDef topVars ++
-                                  globalGcRootHelpers)
+                                  globalGcRootAdder)
                                  (map addLamPrefix topLams)
   where
     topNames = map fst topDefs
-    globalGcRootHelpers
-      = ["static void PushGlobalGcRoots();",
-         "static void PopGlobalGcRoots();",
-         "static void PushGlobalGcRoots() {"] ++
-        ["Scm_PushGcRoot(" ++ name ++ ");" | name <- topNames] ++
-        ["}",
-         "static void PopGlobalGcRoots() {"] ++
-        [name ++ " = Scm_PopGcRoot();" | name <- reverse topNames] ++
+    globalGcRootAdder
+      = ["static void AddGlobalGcRoots() {"] ++
+        ["Scm_AddGlobalGcRoot(&" ++ name ++ ");" | name <- topNames] ++
         ["}"]
     (topLams, topVars) = partition (isLambda . snd) topDefs
     mkVarDef (name, expr) = "ScmPtr " ++ name ++ " = " ++ genAtom expr ++ ";"
@@ -81,7 +76,12 @@ genToplevel = do
   maybeLam <- getOneLam
   case maybeLam of
     Just (name, ELambda upv args body) -> do
-      cFunc <- execStateT (genLam body) (CFunc name (mkLoc args upv) [])
+      let initCode = if name == "Sc_Mainzkmain"
+                       then ["AddGlobalGcRoots();"]
+                       else []
+      let funcToGen = CFunc {cfName=name, cfArgs=args,
+                             cfVars=mkLoc args upv, cfCode=initCode}
+      cFunc <- execStateT (genLam body) funcToGen
       modify $ \st -> st {
         cFuncDefs = cFunc:cFuncDefs st
       }
@@ -99,15 +99,16 @@ addNewLam lam = do
 
 data CFunc = CFunc {
   cfName :: String,
+  cfArgs :: [String],
   cfVars :: Map String Loc,
   cfCode :: [String]
 }
   deriving (Show, Eq)
 
 instance CSource CFunc where
-  toC cFunc@(CFunc name vars code)
+  toC cFunc@(CFunc name args vars code)
     = unlines (["static void",
-                name ++ "(" ++ (formatArgs $ findLocals' cFunc)
+                name ++ "(" ++ (formatArgs args)
                 ++ ") {"] ++ code ++ ["}"])
 
 data Loc = Local String
@@ -182,6 +183,7 @@ genAtom expr = case expr of
   EBool b -> if b then "Scm_True" else "Scm_False"
   EUnbound -> "Scm_Unbound"
   EUnspecified -> "Scm_Unspecified"
+  ENil -> "Scm_Nil"
   _ -> error $ "genAtom: illegal expr: " ++ show expr
 
 genStmt :: Expr -> GenCFunc ()
@@ -205,7 +207,6 @@ allocClosure cloName lamName upvals = do
   emit $ "if (!" ++ cloName ++ ") {"
   -- if alloc failed
   funcLocals <- findLocals
-  emit "PushGlobalGcRoots();"
   emit $ "Scm_PushGcRoot(" ++ currCloName ++ ");"
   forM funcLocals $ \name -> do
     emit $ "Scm_PushGcRoot(" ++ name ++ ");"
@@ -214,7 +215,6 @@ allocClosure cloName lamName upvals = do
   forM (reverse funcLocals) $ \name -> do
     emit $ name ++ " = Scm_PopGcRoot();"
   emit $ currCloName ++ " = Scm_PopGcRoot();"
-  emit "PopGlobalGcRoots();"
   emit $ cloName ++ " = " ++ formatAlloc ("sizeof(ScmClosure) + " ++
          show extraSize) ++ ";"
   -- end if

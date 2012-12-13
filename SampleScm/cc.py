@@ -28,7 +28,7 @@ bin_name = args.output_file
 with timeit('hs-compile'):
     hs_compile(src_name, cgen_name)
 
-gcc_compile(lib_names + [cgen_name], bin_name, flags=['-O2'])
+gcc_compile(lib_names + [cgen_name], bin_name, flags=['-O2', '-g'])
 
 if args.run:
     with timeit('native-run'):
