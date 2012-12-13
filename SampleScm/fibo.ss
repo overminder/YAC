@@ -4,5 +4,13 @@
       (+ (fibo (- n 1))
 	 (fibo (- n 2)))))
 
-(display (fibo 35))
+(define (make-cell n)
+  (lambda ()
+    n))
+
+(define cell (make-cell 123))
+(display (fibo 30))
+(newline)
+(display (cell))
+(newline)
 

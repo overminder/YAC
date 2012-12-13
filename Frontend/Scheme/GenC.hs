@@ -1,26 +1,31 @@
 module Frontend.Scheme.GenC (
   GenState(..),
   runGenC,
+  mkGenState,
   genToplevel,
   CFunc(..),
-  findLocals'
 ) where
 
 import Control.Monad.State
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.List (intercalate)
+import Data.List (intercalate, partition)
 
 import Frontend.Scheme.AST
 import Util.Temp
 
+class CSource a where
+  toC :: a -> String
+
 data GenState
   = GenState {
-    allFuncs :: [CFunc],
+    cFuncDefs :: [CFunc],
+    cTopDecls :: [String],
     lamToGen :: [(String, Expr)]
   }
 
-empty = GenState [] []
+instance CSource GenState where
+  toC st = unlines $ cTopDecls st ++ map toC (cFuncDefs st)
 
 type GenC = StateT GenState TempGen
 
@@ -34,8 +39,42 @@ getOneLam = do
     [] ->
       return Nothing
 
-runGenC :: GenState -> GenC a -> TempGen [CFunc]
-runGenC st m = liftM allFuncs (execStateT m st)
+runGenC :: GenState -> GenC a -> TempGen String
+runGenC initState m = do
+  st <- execStateT m initState
+  return $ toC st
+
+mkGenState :: [(String, Expr)] -> GenState
+mkGenState topDefs = GenState [] (concatMap mkSuperComb topLams ++
+                                  map mkVarDef topVars ++
+                                  globalGcRootHelpers)
+                                 (map addLamPrefix topLams)
+  where
+    topNames = map fst topDefs
+    globalGcRootHelpers
+      = ["static void PushGlobalGcRoots();",
+         "static void PopGlobalGcRoots();",
+         "static void PushGlobalGcRoots() {"] ++
+        ["Scm_PushGcRoot(" ++ name ++ ");" | name <- topNames] ++
+        ["}",
+         "static void PopGlobalGcRoots() {"] ++
+        [name ++ " = Scm_PopGcRoot();" | name <- reverse topNames] ++
+        ["}"]
+    (topLams, topVars) = partition (isLambda . snd) topDefs
+    mkVarDef (name, expr) = "ScmPtr " ++ name ++ " = " ++ genAtom expr ++ ";"
+    mkSuperComb (name, ELambda _ args _)
+      = ["static void Sc_" ++ name ++ "(" ++ formatArgs args ++ ");",
+         "static ScmClosure _" ++ name ++
+         " = Scm_MkSuperComb(Sc_" ++ name ++ ");",
+         "ScmPtr " ++ name ++ " = (ScmPtr) &_" ++ name ++ ";"]
+    addLamPrefix (name, expr) = ("Sc_" ++ name, expr)
+    isLambda (ELambda _ _ _) = True
+    isLambda _ = False
+
+currCloName = "thisClosure"
+
+formatArgs :: [String] -> String
+formatArgs args = intercalate ", " $ map ("ScmPtr "++) (currCloName:args)
 
 genToplevel :: GenC ()
 genToplevel = do
@@ -44,7 +83,7 @@ genToplevel = do
     Just (name, ELambda upv args body) -> do
       cFunc <- execStateT (genLam body) (CFunc name (mkLoc args upv) [])
       modify $ \st -> st {
-        allFuncs = cFunc:allFuncs st
+        cFuncDefs = cFunc:cFuncDefs st
       }
       genToplevel
     Nothing -> return ()
@@ -64,6 +103,12 @@ data CFunc = CFunc {
   cfCode :: [String]
 }
   deriving (Show, Eq)
+
+instance CSource CFunc where
+  toC cFunc@(CFunc name vars code)
+    = unlines (["static void",
+                name ++ "(" ++ (formatArgs $ findLocals' cFunc)
+                ++ ") {"] ++ code ++ ["}"])
 
 data Loc = Local String
          | Upval Int
@@ -123,17 +168,21 @@ genLam expr = case expr of
 genExpr :: Expr -> GenCFunc String
 genExpr expr = case expr of
   EVar s -> formatVar s
-  EInt i -> return $ "Scm_MkInt(" ++ show i ++ ")"
-  EBool b -> return $ if b then "Scm_True" else "Scm_False"
-  EUnbound -> return $ "Scm_Unbound"
-  EUnspecified -> return $ "Scm_Unspecified"
   thisLam@(ELambda upvals args body) -> do
     lamName <- lift $ addNewLam thisLam
     cloName <- gensym "newClosure_"
     emitNewVar cloName
     allocClosure cloName lamName upvals
     return cloName
-  _ -> error $ "genExpr: illegal expr: " ++ show expr
+  _ -> return $ genAtom expr
+
+genAtom :: Expr -> String
+genAtom expr = case expr of
+  EInt i -> "Scm_MkInt(" ++ show i ++ ")"
+  EBool b -> if b then "Scm_True" else "Scm_False"
+  EUnbound -> "Scm_Unbound"
+  EUnspecified -> "Scm_Unspecified"
+  _ -> error $ "genAtom: illegal expr: " ++ show expr
 
 genStmt :: Expr -> GenCFunc ()
 genStmt expr = case expr of
@@ -143,7 +192,8 @@ genStmt expr = case expr of
     emit $ name ++ " = " ++ rhs ++ ";"
   ESete name form -> do
     rhs <- genExpr form
-    emit $ name ++ " = " ++ rhs ++ ";"
+    realName <- formatVar name
+    emit $ realName ++ " = " ++ rhs ++ ";"
   _ -> error $ "genStmt: illegal stmt: " ++ show expr
 
 allocClosure :: String -> String -> [String] -> GenCFunc ()
@@ -155,14 +205,16 @@ allocClosure cloName lamName upvals = do
   emit $ "if (!" ++ cloName ++ ") {"
   -- if alloc failed
   funcLocals <- findLocals
-  emit "Scm_PushGcRoot(thisClosure);"
+  emit "PushGlobalGcRoots();"
+  emit $ "Scm_PushGcRoot(" ++ currCloName ++ ");"
   forM funcLocals $ \name -> do
     emit $ "Scm_PushGcRoot(" ++ name ++ ");"
   emit "Scm_GcCollect();"
   -- restore
   forM (reverse funcLocals) $ \name -> do
     emit $ name ++ " = Scm_PopGcRoot();"
-  emit "thisClosure = Scm_PopGcRoot();"
+  emit $ currCloName ++ " = Scm_PopGcRoot();"
+  emit "PopGlobalGcRoots();"
   emit $ cloName ++ " = " ++ formatAlloc ("sizeof(ScmClosure) + " ++
          show extraSize) ++ ";"
   -- end if
@@ -192,7 +244,7 @@ formatVar name = do
   varMap <- liftM cfVars get
   return $ case Map.lookup name varMap of
     Just (Local s) -> s
-    Just (Upval i) -> formatUpval "thisClosure" i
+    Just (Upval i) -> formatUpval currCloName i
     Nothing -> name
 
 findLocals' :: CFunc -> [String]

@@ -16,6 +16,9 @@ static void obj_display(ScmPtr _, ScmPtr a, ScmPtr k) {
     else if (a == Scm_Unspecified) {
         printf("#<unspecified>");
     }
+    else if (Scm_HeapObjType(a) == Scm_ClosureType) {
+        printf("#<closure %p>", (void *) a);
+    }
     else {
         printf("#<unknown %p>", (void *) a);
     }
@@ -23,6 +26,13 @@ static void obj_display(ScmPtr _, ScmPtr a, ScmPtr k) {
 }
 static ScmClosure _display = Scm_MkSuperComb(obj_display);
 ScmPtr display = (ScmPtr) &_display;
+
+static void show_newline(ScmPtr _, ScmPtr k) {
+    printf("\n");
+    Scm_TailCall1(k, Scm_Unspecified);
+}
+static ScmClosure _newline = Scm_MkSuperComb(show_newline);
+ScmPtr newline = (ScmPtr) &_newline;
 
 static void int_add(ScmPtr _, ScmPtr a, ScmPtr b, ScmPtr k) {
     ScmPtr res = Scm_MkInt((a >> 2) + (b >> 2));

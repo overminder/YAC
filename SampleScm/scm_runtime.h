@@ -79,6 +79,7 @@ ScmPtr Scm_GcAlloc(size_t);
 void Scm_GcCollect();
 
 extern ScmPtr display;
+extern ScmPtr newline;
 extern ScmPtr zg;  /* + */
 extern ScmPtr zh;  /* - */
 extern ScmPtr zl;  /* < */
