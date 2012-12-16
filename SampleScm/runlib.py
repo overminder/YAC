@@ -21,7 +21,9 @@ def hs_compile(name_in, name_out):
     with open(name_in) as f:
         src = f.read()
 
-    p = Popen([path('../bin/ScmToIR')], stdin=PIPE, stdout=PIPE, stderr=PIPE)
+    args = [path('../bin/ScmToIR')]
+    print '%s < %s' % (' '.join(args), name_in)
+    p = Popen(args, stdin=PIPE, stdout=PIPE, stderr=PIPE)
     out, err = p.communicate(src)
     if err:
         raise CompileError(err)
@@ -29,13 +31,15 @@ def hs_compile(name_in, name_out):
         f.write(out)
 
 def gcc_compile(files_in, name_out, cflags=[], ldflags=[]):
-    p = Popen(['gcc'] + ['-o', name_out] + cflags + files_in + ldflags,
-              stderr=PIPE)
+    args = ['gcc'] + ['-o', name_out] + cflags + files_in + ldflags
+    print ' '.join(args)
+    p = Popen(args, stderr=PIPE)
     _, err = p.communicate()
     if err:
         raise CompileError(err)
 
 def native_run(name):
+    print name
     Popen([name]).communicate()
 
 def csi_run(file_name):

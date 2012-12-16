@@ -24,7 +24,7 @@ void
 Scm_GcInit(void) {
     curr_heap = malloc(sizeof(Heap));
     _AllocSpace(&curr_heap->small, 128 * KB, 0);  /* half of L2 cache */
-    _AllocSpace(&curr_heap->large, 3 * MB, 1);   /* 66% of L3 cache */
+    _AllocSpace(&curr_heap->large, 16 * MB, 1);   /* 66% of L3 cache */
     curr_heap->root_stack_ptr = curr_heap->root_stack;
     curr_heap->global_root_ptr = curr_heap->global_roots;
     curr_heap->rem_set_ptr = curr_heap->remembered_set;

@@ -98,7 +98,6 @@ typedef void (*ScmFuncPtr4) (ScmPtr, ScmPtr, ScmPtr, ScmPtr, ScmPtr);
     Scm_GcWriteBarrier(clo, v); \
     ScmClosure_GetUpvalAt(clo, n) = v
 
-
 #define ScmClosure_Code(clo) \
     (((ScmClosure *) (clo))->code)
 
@@ -129,12 +128,16 @@ typedef void (*ScmFuncPtr4) (ScmPtr, ScmPtr, ScmPtr, ScmPtr, ScmPtr);
             __FILE__, __LINE__, __func__, wat);         \
     exit(1)
 
-#define Scm_Assert(expr) \
-    do { \
-        if (!(expr)) { \
-            Scm_Fatal("Assertion failed (" #expr ")"); \
-        } \
-    } while (0)
+#ifndef NDEBUG
+# define Scm_Assert(expr) \
+     do { \
+         if (!(expr)) { \
+             Scm_Fatal("Assertion failed (" #expr ")"); \
+         } \
+     } while (0)
+#else
+# define Scm_Assert(expr) (void) 0
+#endif
 
 #define SCM_PRELUDE_NAMES(V) \
     V(display) \
@@ -166,18 +169,18 @@ SCM_PRELUDE_NAMES(EXPORT_NAME)
 extern ScmPtr Mainzkmain;  /* exported by app code */
 
 /* GC settings */
+#define Scm_GcWriteBarrier(clo, v) (void) clo; (void) v
 #ifdef SCM_GC_FLAVOR_MOVING
 /* Simple Moving GC */
-# define Scm_GcWriteBarrier(clo, v) (void) clo; (void) v
 #include "scm_moving_gc.inl.c"
 
 #elif SCM_GC_FLAVOR_GENERATIONAL
+#undef Scm_GcWriteBarrier
 /* Two-generation Moving GC */
 #include "scm_generational_gc.inl.c"
 
 #elif SCM_GC_FLAVOR_BOEHM
 /* Conservative Boehm GC */
-# define Scm_GcWriteBarrier(clo, v) (void) clo; (void) v
 #include "scm_boehm_gc.inl.c"
 
 #else

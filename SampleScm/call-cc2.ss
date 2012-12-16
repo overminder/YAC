@@ -40,12 +40,12 @@
   (display x)
   (newline))
 
-(define lst (range 120000))
+(define lst (range 420000))
  
 (define generate-digit
   (generate-one-element-at-a-time (cdr lst)))
  
 (for-each (lambda (x)
-	    (generate-digit))
-	  lst)
+	        (generate-digit))
+          lst)
 

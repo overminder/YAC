@@ -11,7 +11,7 @@ static void _RedirectInteriorPointer(GcHeader *);
 
 void
 Scm_GcInit() {
-    size_t size = 3 * MB;
+    size_t size = 16 * MB;
     curr_heap = malloc(sizeof(Heap));
     curr_heap->space_size = size;
     curr_heap->from_space = (ScmPtr) malloc(size);

@@ -10,7 +10,7 @@
 
 (begin
   (define cell (make-cell (cons 1 2)))
-  (display (fibo 30))
+  (display (fibo 35))
   (newline)
   (display (cell))
   (newline))
