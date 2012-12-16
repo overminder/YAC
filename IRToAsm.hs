@@ -17,7 +17,7 @@ import Frontend.Parser
 import qualified Frontend.IRGen as IRGen
 
 showMany :: Show a => [a] -> String
-showMany insnList = List.intercalate "\n" (map show insnList)
+showMany insnList = unlines (map show insnList)
 
 visualize1 :: Cell -> IO ()
 visualize1 prog = do

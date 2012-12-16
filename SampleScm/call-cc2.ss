@@ -27,16 +27,25 @@
   (define (generator)
     (call/cc (unbox ctrl-box)) )
   generator)
- 
-(define generate-digit
-  (generate-one-element-at-a-time (cons 0 (cons 1 (cons 2 '())))))
+
+(define (range-iter xs n)
+  (if (eq? n 0)
+      xs
+      (range-iter (cons n xs) (- n 1))))
+
+(define (range n1)
+  (range-iter '() n1))
 
 (define (prn x)
   (display x)
   (newline))
+
+(define lst (range 120000))
  
-(prn (generate-digit))
-(prn (generate-digit))
-(prn (generate-digit))
-(prn (generate-digit))
+(define generate-digit
+  (generate-one-element-at-a-time (cdr lst)))
+ 
+(for-each (lambda (x)
+	    (generate-digit))
+	  lst)
 

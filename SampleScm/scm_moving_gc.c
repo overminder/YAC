@@ -1,55 +1,35 @@
 #include "scm_runtime.h"
+#include "scm_moving_gc.h"
 
-#define KB (1024)
-#define MB (KB * KB)
-#define ROOT_STACK_SIZE (1 * KB)
+Heap *Scm_CurrHeap;
 
-#define GC_NOTONHEAP 0
-#define GC_UNREACHABLE 1
-#define GC_MARKED 2
-#define GC_MOVED_FROM 3
-#define GC_MOVED_TO 4
+#define curr_heap Scm_CurrHeap
 
-typedef struct {
-    SCM_HEADER;
-    ScmPtr copied_to;
-} GcHeader;
-
-#define MARKOF(p) \
-    ((GcHeader *) (p))->gcmark
-
-#define OBSIZE(p) \
-    ((GcHeader *) (p))->obsize
-
-#define COPIED_TO(p) \
-    ((GcHeader *) (p))->copied_to
-
-typedef struct {
-    ScmPtr next_alloc;
-    ScmPtr limit;
-    ScmPtr from_space;
-    ScmPtr to_space;
-    ScmPtr copy_ptr;
-    size_t space_size;
-    ScmPtr root_stack[ROOT_STACK_SIZE];
-    ScmPtr *root_stack_ptr;
-    ScmPtr *global_roots[ROOT_STACK_SIZE];
-    ScmPtr **global_root_ptr;
-} Heap;
-
-static Heap *curr_heap;
+static void _MarkPointer(GcHeader *);
+static void _CopyPointer(GcHeader *);
+static void _RedirectInteriorPointer(GcHeader *);
 
 void
 Scm_GcInit() {
-    size_t size = 256 * KB;
+    size_t size = 3 * MB;
     curr_heap = malloc(sizeof(Heap));
     curr_heap->space_size = size;
     curr_heap->from_space = (ScmPtr) malloc(size);
     curr_heap->next_alloc = curr_heap->from_space;
     curr_heap->limit = curr_heap->from_space + size;
     curr_heap->to_space = (ScmPtr) malloc(size);
+    //curr_heap->to_space = 0;
     curr_heap->root_stack_ptr = curr_heap->root_stack;
     curr_heap->global_root_ptr = curr_heap->global_roots;
+
+    curr_heap->n_allocs = curr_heap->n_bytes_alloc =
+    curr_heap->n_collects = curr_heap->n_bytes_collect = 0;
+
+    /* Push global variables since they could be overriden */
+#define PUSH_GLOBALS(name) \
+    Scm_AddGlobalGcRoot(&name);
+SCM_PRELUDE_NAMES(PUSH_GLOBALS)
+#undef PUSH_GLOBALS
 }
 
 void
@@ -61,43 +41,19 @@ Scm_GcFini() {
 }
 
 void
+Scm_GcSummary(void) {
+    fprintf(stderr, "[Moving Gc Stat]\n");
+    fprintf(stderr, "%d allocations, from which %ld bytes allocated.\n",
+            curr_heap->n_allocs, curr_heap->n_bytes_alloc);
+    fprintf(stderr, "%d collections, from which %ld bytes where collected.\n",
+            curr_heap->n_collects, curr_heap->n_bytes_collect);
+}
+
+void
 Scm_AddGlobalGcRoot(ScmPtr *g) {
     *(curr_heap->global_root_ptr) = g;
     curr_heap->global_root_ptr++;
 }
-
-void
-Scm_PushGcRoot(ScmPtr wat) {
-    *(curr_heap->root_stack_ptr) = wat;
-    curr_heap->root_stack_ptr++;
-}
-
-ScmPtr
-Scm_PopGcRoot() {
-    ScmPtr res;
-    curr_heap->root_stack_ptr--;
-    res = *(curr_heap->root_stack_ptr);
-    *(curr_heap->root_stack_ptr) = 0;
-    return res;
-}
-
-ScmPtr
-Scm_GcAlloc(size_t size) {
-    ScmPtr next_alloc = curr_heap->next_alloc;
-    GcHeader *ptr = (GcHeader *)next_alloc;
-    next_alloc += size;
-    if (next_alloc >= curr_heap->limit) {
-        return 0;
-    }
-    ptr->gcmark = GC_UNREACHABLE;
-    ptr->obsize = size;
-    curr_heap->next_alloc = next_alloc;
-    return (ScmPtr) ptr;
-}
-
-static void _MarkPointer(GcHeader *);
-static void _CopyPointer(GcHeader *);
-static void _RedirectInteriorPointer(GcHeader *);
 
 void
 Scm_GcCollect() {
@@ -123,13 +79,20 @@ Scm_GcCollect() {
         }
     }
 
+    // XXX
+    //curr_heap->to_space = (ScmPtr) malloc(curr_heap->space_size);
+
     /* Scan from-space and copy live objects to to-space */
     ScmPtr prev_obj_size;
     curr_heap->copy_ptr = curr_heap->to_space;
     for (v = curr_heap->from_space; v < curr_heap->next_alloc;
          v += prev_obj_size) {
+        Scm_Assert(Scm_IsPointer(v));
         if (MARKOF(v) == GC_MARKED) {
             _CopyPointer((GcHeader *) v);
+        }
+        else {
+            Scm_Assert(MARKOF(v) == GC_UNREACHABLE);
         }
         prev_obj_size = OBSIZE(v);
     }
@@ -157,11 +120,23 @@ Scm_GcCollect() {
             **iter2 = COPIED_TO(v);
         }
     }
+    size_t orig_usage = curr_heap->next_alloc - curr_heap->from_space;
+    size_t curr_usage = curr_heap->copy_ptr - curr_heap->to_space;
 
     /* Swap two spaces */
     ScmPtr tmp = curr_heap->from_space;
     curr_heap->from_space = curr_heap->to_space;
     curr_heap->to_space = tmp;
+
+    /* Stat */
+#ifdef SCM_GC_STAT
+    curr_heap->n_collects += 1;
+    curr_heap->n_bytes_collect += orig_usage - curr_usage;
+#endif
+
+    // XXX
+    //free((void *) curr_heap->to_space);
+    //curr_heap->to_space = 0;
 
     curr_heap->next_alloc = curr_heap->copy_ptr;
     curr_heap->limit = curr_heap->from_space + curr_heap->space_size;
@@ -170,11 +145,12 @@ Scm_GcCollect() {
 /* Recursive mark? */
 static void
 _MarkPointer(GcHeader *ptr) {
+loop:
     ptr->gcmark = GC_MARKED;
     if (ptr->obtype == Scm_ClosureType) {
-        int nb_upvals = (ptr->obsize - sizeof(ScmClosure)) >> 3;
+        int nb_upvals = (OBSIZE(ptr) - sizeof(ScmClosure)) >> 3;
         int i;
-        ScmPtr *upvals = &(ScmClosure_UpvalAt(ptr, 0));
+        ScmPtr *upvals = &(ScmClosure_GetUpvalAt(ptr, 0));
         for (i = 0; i < nb_upvals; ++i) {
             ScmPtr upval = upvals[i];
             if (Scm_IsPointer(upval) && MARKOF(upval) == GC_UNREACHABLE) {
@@ -189,7 +165,8 @@ _MarkPointer(GcHeader *ptr) {
         }
         iptr = ScmPair_Cdr(ptr);
         if (Scm_IsPointer(iptr) && MARKOF(iptr) == GC_UNREACHABLE) {
-            _MarkPointer((GcHeader *) iptr);
+            ptr = (GcHeader *) iptr;
+            goto loop;
         }
     }
     else {
@@ -199,8 +176,9 @@ _MarkPointer(GcHeader *ptr) {
 
 static void
 _CopyPointer(GcHeader *ptr) {
-    size_t size = ptr->obsize;
+    size_t size = OBSIZE(ptr);
     ScmPtr copy_to = curr_heap->copy_ptr;
+    Scm_Assert(Scm_IsPointer(copy_to));
     memcpy((void *) copy_to, ptr, size);
     curr_heap->copy_ptr = copy_to + size;
 
@@ -211,29 +189,45 @@ _CopyPointer(GcHeader *ptr) {
 
 static void
 _RedirectInteriorPointer(GcHeader *ptr) {
-    if (ptr->gcmark != GC_MOVED_TO) {
-        Scm_Fatal("unexpected gcmark");
-    }
+    Scm_Assert(ptr->gcmark == GC_MOVED_TO);
     ptr->gcmark = GC_UNREACHABLE;
     if (ptr->obtype == Scm_ClosureType) {
-        int nb_upvals = (ptr->obsize - sizeof(ScmClosure)) >> 3;
+        int nb_upvals = (OBSIZE(ptr) - sizeof(ScmClosure)) >> 3;
         int i;
-        ScmPtr *upvals = &(ScmClosure_UpvalAt(ptr, 0));
+        ScmPtr *upvals = &(ScmClosure_GetUpvalAt(ptr, 0));
         for (i = 0; i < nb_upvals; ++i) {
             ScmPtr upval = upvals[i];
-            if (Scm_IsPointer(upval) && MARKOF(upval) == GC_MOVED_FROM) {
-                upvals[i] = COPIED_TO(upval);
+            if (Scm_IsPointer(upval)) {
+               if (MARKOF(upval) == GC_MOVED_FROM) {
+                   upvals[i] = COPIED_TO(upval);
+               }
+               else {
+                   Scm_Assert(MARKOF(upval) == GC_UNREACHABLE ||
+                              MARKOF(upval) == GC_NOTONHEAP);
+               }
             }
         }
     }
     else if (ptr->obtype == Scm_PairType) {
         ScmPtr iptr = ScmPair_Car(ptr);
-        if (Scm_IsPointer(iptr) && MARKOF(iptr) == GC_MOVED_FROM) {
-            ScmPair_Car(ptr) = COPIED_TO(iptr);
+        if (Scm_IsPointer(iptr)) {
+           if (MARKOF(iptr) == GC_MOVED_FROM) {
+               ScmPair_Car(ptr) = COPIED_TO(iptr);
+           }
+           else {
+               Scm_Assert(MARKOF(iptr) == GC_UNREACHABLE ||
+                          MARKOF(iptr) == GC_NOTONHEAP);
+           }
         }
         iptr = ScmPair_Cdr(ptr);
-        if (Scm_IsPointer(iptr) && MARKOF(iptr) == GC_MOVED_FROM) {
-            ScmPair_Cdr(ptr) = COPIED_TO(iptr);
+        if (Scm_IsPointer(iptr)) {
+            if (MARKOF(iptr) == GC_MOVED_FROM) {
+                ScmPair_Cdr(ptr) = COPIED_TO(iptr);
+            }
+           else {
+               Scm_Assert(MARKOF(iptr) == GC_UNREACHABLE ||
+                          MARKOF(iptr) == GC_NOTONHEAP);
+           }
         }
     }
     else {

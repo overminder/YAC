@@ -26,25 +26,23 @@ type UpvalGen = StateT UpvalState TempGen
 runUpvalGen :: UpvalGen a -> TempGen a
 runUpvalGen m = evalStateT m empty
 
-enterLambda :: UpvalGen ()
-enterLambda = do
+withNewLambda :: UpvalGen a -> UpvalGen a
+withNewLambda m = do
   st <- get
   put $ empty {outerScope = Just st}
-
-leaveLambda :: UpvalGen ()
-leaveLambda = do
+  a <- m
   (Just outer) <- liftM outerScope get
   put outer
+  return a
 
 liftUpval :: Expr -> UpvalGen Expr
 liftUpval expr = case expr of
-  ELambda _ args body -> do
-    enterLambda
-    mapM_ addLocal args
-    body' <- liftUpval body
-    us <- liftM (Set.toList . upvals) get
-    leaveLambda
-    return $ ELambda us args body'
+  ELambda _ args body ->
+    withNewLambda $ do
+      mapM_ addLocal args
+      body' <- liftUpval body
+      us <- liftM (Set.toList . upvals) get
+      return $ ELambda us args body'
   EVar name -> do
     tryAddUpval name
     return expr
