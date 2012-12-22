@@ -3,3 +3,4 @@
 SchemeRewrite
 .*.swp
 bin/
+*.pyc

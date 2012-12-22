@@ -3,7 +3,8 @@ module Frontend.Parser (
   readProgSucc
 ) where
 
-import Text.ParserCombinators.Parsec
+import Text.Parsec
+import Text.Parsec.String
 import Control.Monad
 
 import Frontend.ObjModel
@@ -70,10 +71,10 @@ parseQuoted = do
   return $ List [Symbol "quote", c]
 
 parseCell :: Parser Cell
-parseCell = parseAtom
+parseCell = parseQuoted
         <|> parseNumber
         <|> parsePair
-        <|> parseQuoted
+        <|> parseAtom
         <|> parseString
 
 parseProg :: Parser Cell
