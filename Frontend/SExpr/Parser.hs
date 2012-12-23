@@ -1,4 +1,4 @@
-module Frontend.Parser (
+module Frontend.SExpr.Parser (
   readProg,
   readProgSucc
 ) where
@@ -7,7 +7,7 @@ import Text.Parsec
 import Text.Parsec.String
 import Control.Monad
 
-import Frontend.ObjModel
+import Frontend.SExpr.Cell
 
 symbol :: Parser Char
 symbol = oneOf "!#$%&|+-*/:<=>?@^_~"
@@ -79,6 +79,7 @@ parseCell = parseQuoted
 
 parseProg :: Parser Cell
 parseProg = do
+  spaces
   cs <- endBy parseCell (many space)
   return $ List cs
 

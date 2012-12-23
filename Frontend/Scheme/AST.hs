@@ -14,7 +14,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.List (intercalate)
 
-import Frontend.ObjModel
+import Frontend.SExpr.Cell
 import Util.Temp
 import qualified Util.Ppr as Ppr
 

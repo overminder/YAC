@@ -5,7 +5,7 @@ import Control.Monad
 
 import Util.Temp
 import qualified Util.Ppr as Ppr
-import Frontend.Parser
+import Frontend.SExpr.Parser
 import Frontend.Scheme.AST
 import Frontend.Scheme.Mangler
 import Frontend.Scheme.CPSTrans

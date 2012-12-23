@@ -1,4 +1,4 @@
-module Frontend.IRGen (
+module Frontend.SExpr.IRGen (
   IRGen,
   ToplevelDef(..),
   gen
@@ -9,7 +9,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 
 import Util.Temp
-import Frontend.ObjModel
+import Frontend.SExpr.Cell
 import Backend.IR.IROp
 import Backend.IR.Tree (Tree)
 import qualified Backend.IR.Tree as T
@@ -17,6 +17,7 @@ import qualified Backend.IR.Tree as T
 data ToplevelDef = FuncDef String [Reg] Tree -- name args body
                  | QuadDef String (Maybe Int) -- name initialValue
                  | StringDef String String -- name value
+                 | Extern String -- assembler directive (.global)
   deriving (Show)
 
 data IRGenState = IRGenState {
@@ -89,6 +90,8 @@ genToplevel c = case c of
   (List [Symbol "define", Symbol name, form]) -> case form of
     (Fixnum i) -> return $ QuadDef name (Just i)
     (MString s) -> return $ StringDef name s
+  (List [Symbol "extern", Symbol name]) -> 
+    return $ Extern name
   _ -> error $ "IRGen.genToplevel: illegal form: " ++ show c
 
 defineFormalArgs :: Cell -> IRGen [Reg]

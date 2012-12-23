@@ -12,9 +12,9 @@ import Backend.X64.RegAlloc
 import qualified Backend.X64.Frame as F
 import Backend.X64.Peephole
 
-import Frontend.ObjModel
-import Frontend.Parser
-import qualified Frontend.IRGen as IRGen
+import Frontend.SExpr.Cell
+import Frontend.SExpr.Parser
+import qualified Frontend.SExpr.IRGen as G
 
 showMany :: Show a => [a] -> String
 showMany insnList = unlines (map show insnList)
@@ -22,10 +22,10 @@ showMany insnList = unlines (map show insnList)
 visualize1 :: Cell -> IO ()
 visualize1 prog = do
   let output = runTempGen $ do 
-        toplevelDefs <- IRGen.gen prog
+        toplevelDefs <- G.gen prog
         forM toplevelDefs $ \d -> do
           case d of
-            (IRGen.FuncDef name formals tree) -> F.runFrameGen $ do
+            (G.FuncDef name formals tree) -> F.runFrameGen $ do
               F.setFuncName name
               F.setFuncArgs formals
               rawInsns <- munch tree
@@ -52,7 +52,7 @@ visualize1 prog = do
               --                             b ++ "\n") outputPairs
               --return $ List.intercalate "\n\n" output
               return finalOutput
-            (IRGen.QuadDef name maybeVal) -> execWriterT $ do
+            (G.QuadDef name maybeVal) -> execWriterT $ do
               let writeLn s = tell s >> tell "\n"
               writeLn ".data"
               writeLn ".align 8"
@@ -60,12 +60,15 @@ visualize1 prog = do
               writeLn $ ".quad " ++ case maybeVal of
                 (Just i) -> show i
                 Nothing -> "0"
-            (IRGen.StringDef name val) -> execWriterT $ do
+            (G.StringDef name val) -> execWriterT $ do
               let writeLn s = tell s >> tell "\n"
               writeLn ".data"
               writeLn ".align 8"
               writeLn $ name ++ ":"
               writeLn $ ".string \"" ++ val ++ "\""
+            (G.Extern name) -> execWriterT $ do
+              let writeLn s = tell s >> tell "\n"
+              writeLn $ ".global " ++ name
   mapM_ putStrLn output
 
 main :: IO ()

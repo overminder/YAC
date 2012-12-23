@@ -1,4 +1,4 @@
-module Frontend.ObjModel (
+module Frontend.SExpr.Cell (
   Cell(..),
   isList
 ) where

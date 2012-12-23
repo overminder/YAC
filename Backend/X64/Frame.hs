@@ -284,7 +284,6 @@ formatOutput insnList =
         writeLn ".text"
         writeLn ".align 8"
         funcName <- lift $ liftM name get
-        writeLn $ ".global " ++ funcName
         writeLn $ funcName ++ ":"
         forM_ insnList $ \insn -> do
           writeLn $ gasShow insn
